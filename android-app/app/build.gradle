@@ -15,7 +15,7 @@ android {
         applicationId "com.unb.connect"
         minSdk 23
         targetSdk 35
-        versionCode 17
-        versionName "0.17.0-whatsapp-apk-auto-ack"
+        versionCode 19
+        versionName "0.19.0-whatsapp-web-hidden-fast-runner"
     }
 }
