@@ -1,0 +1,16 @@
+plugins {
+    id "com.android.application"
+}
+
+android {
+    namespace "com.unb.connect"
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "com.unb.connect"
+        minSdk 23
+        targetSdk 35
+        versionCode 1
+        versionName "0.1.0"
+    }
+}
