@@ -7,6 +7,7 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.telephony.SmsManager;
 import android.content.SharedPreferences;
 import android.view.Gravity;
 import android.widget.*;
@@ -28,7 +29,7 @@ public class MainActivity extends Activity {
         prefs = getSharedPreferences("unb_connect", MODE_PRIVATE);
 
         if (android.os.Build.VERSION.SDK_INT >= 23) {
-            requestPermissions(new String[]{Manifest.permission.CALL_PHONE}, 20);
+            requestPermissions(new String[]{Manifest.permission.CALL_PHONE, Manifest.permission.SEND_SMS}, 20);
         }
 
         ScrollView scroll = new ScrollView(this);
@@ -182,6 +183,9 @@ public class MainActivity extends Activity {
 
                     openWhatsApp(phone, message);
                     log("WAIT_ACCESSIBILITY_SEND");
+                } else if ("sms_apk".equals(method)) {
+                    sendSms(phone, message);
+                    markResult(id, "sent", "sms_sent_by_android_app");
                 } else if ("call_apk".equals(method)) {
                     openCall(phone);
                     markResult(id, "sent", "call_opened_by_android_app");
@@ -202,6 +206,25 @@ public class MainActivity extends Activity {
         in.setPackage("com.whatsapp");
         startActivity(in);
         log("WHATSAPP_OPENED=" + clean);
+    }
+
+    void sendSms(String phone, String message) {
+        String clean = phone.replaceAll("[^0-9+]", "");
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 23 &&
+                    checkSelfPermission(Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(new String[]{Manifest.permission.SEND_SMS}, 21);
+                log("SMS_PERMISSION_REQUIRED");
+                return;
+            }
+
+            SmsManager sms = SmsManager.getDefault();
+            sms.sendTextMessage(clean, null, message, null, null);
+            log("SMS_SENT=" + clean);
+        } catch (Exception e) {
+            log("SMS_FAILED: " + e.getMessage());
+            throw new RuntimeException(e);
+        }
     }
 
     void openCall(String phone) {
