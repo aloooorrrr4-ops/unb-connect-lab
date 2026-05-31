@@ -3,15 +3,16 @@ package com.unb.connect;
 import android.Manifest;
 import android.app.Activity;
 import android.os.Bundle;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
-import android.os.Build;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.net.Uri;
@@ -20,6 +21,10 @@ import android.telephony.SmsManager;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.webkit.WebSettings;
+import android.webkit.CookieManager;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
@@ -39,13 +44,15 @@ import java.net.URL;
 import java.net.URLEncoder;
 
 public class MainActivity extends Activity {
+    Handler handler = new Handler(Looper.getMainLooper());
     Handler ackHandler = new Handler(Looper.getMainLooper());
+
     SharedPreferences prefs;
 
     EditText urlInput;
     EditText tokenInput;
-    TextView logView;
     TextView statusView;
+    TextView miniLogView;
 
     CheckBox fullLinkBox;
     CheckBox callBox;
@@ -53,12 +60,30 @@ public class MainActivity extends Activity {
     CheckBox waApkBox;
     CheckBox waWebBox;
 
+    WebView waWebView;
+    LinearLayout waWebHolder;
+
+    JSONArray waWebQueue = new JSONArray();
+    int waWebIndex = 0;
+    int waWebAttempts = 0;
+    boolean waWebResultSent = false;
+    boolean waWebQueueRunning = false;
+    boolean waWebLoadedOnce = false;
+
+    String waWebJobId = "";
+    String waWebPhone = "";
+    String waWebMessage = "";
+
     final int DARK = Color.rgb(15, 23, 42);
     final int GREEN = Color.rgb(13, 148, 136);
     final int BLUE = Color.rgb(37, 99, 235);
     final int RED = Color.rgb(185, 28, 28);
     final int GRAY = Color.rgb(55, 65, 81);
     final int ORANGE = Color.rgb(180, 83, 9);
+
+    static final String DESKTOP_UA =
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
+            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
     @Override
     protected void onCreate(Bundle b) {
@@ -74,6 +99,12 @@ public class MainActivity extends Activity {
         }
 
         buildUi();
+        setupEmbeddedWhatsAppWeb();
+
+        // تحميل WhatsApp Web مرة واحدة عند فتح/تسجيل التطبيق.
+        waWebView.loadUrl("https://web.whatsapp.com/");
+        waWebLoadedOnce = true;
+        logMini("WhatsApp Web يتحمل الآن مرة واحدة داخل الصفحة. بعد QR يبقى جاهز.");
     }
 
     void buildUi() {
@@ -89,7 +120,9 @@ public class MainActivity extends Activity {
         page.addView(methodsCard());
         page.addView(nativeActionsCard());
         page.addView(whatsappCard());
-        page.addView(logCard());
+
+        // بدل السجل الأسود: WhatsApp Web داخل نفس الصفحة.
+        page.addView(embeddedWhatsAppWebCard());
 
         setContentView(scroll);
     }
@@ -105,11 +138,11 @@ public class MainActivity extends Activity {
         brand.setGravity(Gravity.CENTER);
         h.addView(brand);
 
-        TextView sub = tv("تنفيذ طابور النظام عبر التطبيق: اتصال، SMS، WhatsApp APK، WhatsApp Web", 13, Typeface.NORMAL, Color.rgb(209, 213, 219));
+        TextView sub = tv("تنفيذ الطابور من التطبيق: SMS / Call / WhatsApp APK / WhatsApp Web", 13, Typeface.NORMAL, Color.rgb(209, 213, 219));
         sub.setGravity(Gravity.CENTER);
         h.addView(sub);
 
-        statusView = tv("الوضع: Native Device Executor V1", 13, Typeface.BOLD, Color.rgb(187, 247, 208));
+        statusView = tv("الوضع: Embedded WhatsApp Web Main Page V1", 13, Typeface.BOLD, Color.rgb(187, 247, 208));
         statusView.setGravity(Gravity.CENTER);
         h.addView(statusView);
 
@@ -119,8 +152,8 @@ public class MainActivity extends Activity {
     View systemLinkCard() {
         LinearLayout c = card();
 
-        c.addView(title("1) ربط النظام / Termux المؤقت"));
-        c.addView(note("حاليًا نستخدم http://127.0.0.1:3108 مؤقتًا. لاحقًا نفس التطبيق يقرأ من نظام UNB ERP الحقيقي بنفس Web Token."));
+        c.addView(title("1) ربط النظام / طابور الإرسال"));
+        c.addView(note("WhatsApp Web نفسه داخل التطبيق. Termux مؤقتًا فقط مصدر الطابور والـ ACK."));
 
         fullLinkBox = new CheckBox(this);
         fullLinkBox.setText("تفعيل الربط الكامل");
@@ -139,7 +172,7 @@ public class MainActivity extends Activity {
         c.addView(tokenInput);
 
         c.addView(btn("حفظ الرابط والتوكن", GRAY, v -> saveSettings()));
-        c.addView(btn("تحميل التوكن من Termux", BLUE, v -> loadTokenFromServer()));
+        c.addView(btn("تحميل التوكن من الطابور", BLUE, v -> loadTokenFromServer()));
         c.addView(btn("فحص الاتصال / Heartbeat", GREEN, v -> heartbeat()));
 
         return c;
@@ -147,12 +180,12 @@ public class MainActivity extends Activity {
 
     View methodsCard() {
         LinearLayout c = card();
-        c.addView(title("2) طرق الجهاز المنفذة من التطبيق"));
+        c.addView(title("2) طرق الجهاز"));
 
         callBox = check("call_apk - اتصال من الجوال", prefs.getBoolean("m_call_apk", true));
         smsBox = check("sms_apk - SMS من الجوال", prefs.getBoolean("m_sms_apk", true));
         waApkBox = check("whatsapp_apk - واتساب APK", prefs.getBoolean("m_whatsapp_apk", true));
-        waWebBox = check("whatsapp_web - واتساب Web داخل التطبيق", prefs.getBoolean("m_whatsapp_web", true));
+        waWebBox = check("whatsapp_web - واتساب Web داخل نفس الصفحة", prefs.getBoolean("m_whatsapp_web", true));
 
         c.addView(callBox);
         c.addView(smsBox);
@@ -165,7 +198,7 @@ public class MainActivity extends Activity {
 
     View nativeActionsCard() {
         LinearLayout c = card();
-        c.addView(title("3) تنفيذ الطابور الحقيقي من التطبيق"));
+        c.addView(title("3) تنفيذ الطابور"));
 
         c.addView(btn("سحب وتنفيذ طلب واحد", BLUE, v -> pollAndExecute(1)));
         c.addView(btn("سحب وتنفيذ كل الطلبات المتاحة", ORANGE, v -> pollAndExecute(20)));
@@ -180,24 +213,283 @@ public class MainActivity extends Activity {
     View whatsappCard() {
         LinearLayout c = card();
         c.addView(title("4) WhatsApp"));
-        c.addView(note("WhatsApp APK يحتاج Accessibility حتى يضغط إرسال. WhatsApp Web يفتح WebView داخل التطبيق ويعرض QR عند الحاجة."));
+
+        c.addView(note("WhatsApp APK يستخدم Accessibility. WhatsApp Web محمّل تحت داخل نفس الصفحة، لا يفتح Activity ثانية."));
 
         c.addView(btn("فتح إعدادات Accessibility", ORANGE, v -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))));
-        c.addView(btn("فتح WhatsApp Web / QR", GREEN, v -> openWhatsAppWebQr()));
+
+        c.addView(btn("إظهار / تحديث WhatsApp Web QR", GREEN, v -> {
+            showWhatsAppWeb();
+            waWebView.loadUrl("https://web.whatsapp.com/");
+            logMini("إظهار WhatsApp Web للربط أو المراجعة.");
+        }));
+
+        c.addView(btn("إخفاء شاشة واتساب Web", GRAY, v -> {
+            hideWhatsAppWeb();
+            logMini("تم إخفاء شاشة WhatsApp Web، والجلسة باقية داخل التطبيق.");
+        }));
+
+        c.addView(btn("سحب وتنفيذ طابور WhatsApp Web", BLUE, v -> {
+            saveSettings();
+            showWhatsAppWeb();
+            pullWhatsAppWebQueueAndRun();
+        }));
 
         return c;
     }
 
-    View logCard() {
+    View embeddedWhatsAppWebCard() {
         LinearLayout c = card();
-        c.addView(title("السجل"));
-        logView = tv("جاهز...", 13, Typeface.NORMAL, Color.rgb(229, 231, 235));
-        logView.setTextDirection(View.TEXT_DIRECTION_LTR);
-        logView.setGravity(Gravity.LEFT);
-        logView.setPadding(dp(10), dp(10), dp(10), dp(10));
-        logView.setBackgroundColor(Color.rgb(7, 16, 31));
-        c.addView(logView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(260)));
+
+        c.addView(title("WhatsApp Web داخل التطبيق"));
+        c.addView(note("هذا المكان بدل السجل. الصفحة تتحمل مرة واحدة، وكل إرسال يحدث نفس WebView فقط."));
+
+        miniLogView = tv("جاهز...", 12, Typeface.NORMAL, Color.rgb(31, 41, 55));
+        miniLogView.setGravity(Gravity.RIGHT);
+        c.addView(miniLogView);
+
+        waWebHolder = new LinearLayout(this);
+        waWebHolder.setOrientation(LinearLayout.VERTICAL);
+        waWebHolder.setBackgroundColor(Color.WHITE);
+
+        waWebView = new WebView(this);
+        waWebHolder.addView(waWebView, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+        ));
+
+        c.addView(waWebHolder, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(520)
+        ));
+
         return c;
+    }
+
+    void setupEmbeddedWhatsAppWeb() {
+        WebSettings s = waWebView.getSettings();
+        s.setJavaScriptEnabled(true);
+        s.setDomStorageEnabled(true);
+        s.setDatabaseEnabled(true);
+        s.setLoadWithOverviewMode(true);
+        s.setUseWideViewPort(true);
+        s.setSupportMultipleWindows(false);
+        s.setJavaScriptCanOpenWindowsAutomatically(false);
+        s.setUserAgentString(DESKTOP_UA);
+
+        CookieManager cm = CookieManager.getInstance();
+        cm.setAcceptCookie(true);
+        if (Build.VERSION.SDK_INT >= 21) {
+            cm.setAcceptThirdPartyCookies(waWebView, true);
+        }
+
+        waWebView.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageStarted(WebView view, String url, Bitmap favicon) {
+                logMini("WhatsApp Web تحميل: " + shortUrl(url));
+            }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                logMini("WhatsApp Web جاهز داخل الصفحة.");
+                if (waWebJobId.length() > 0 && waWebPhone.length() > 0 && waWebMessage.length() > 0 && !waWebResultSent) {
+                    scheduleWhatsAppWebFastAttempts();
+                }
+            }
+        });
+    }
+
+    void showWhatsAppWeb() {
+        runOnUiThread(() -> {
+            if (waWebHolder == null) return;
+            waWebHolder.setAlpha(1.0f);
+            waWebHolder.setLayoutParams(new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    dp(520)
+            ));
+            setStatus("WhatsApp Web ظاهر داخل الصفحة.");
+        });
+    }
+
+    void hideWhatsAppWeb() {
+        runOnUiThread(() -> {
+            if (waWebHolder == null) return;
+            waWebHolder.setAlpha(0.08f);
+            waWebHolder.setLayoutParams(new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    dp(60)
+            ));
+            setStatus("WhatsApp Web مخفي جزئيًا وجاهز.");
+        });
+    }
+
+    void pullWhatsAppWebQueueAndRun() {
+        waWebQueueRunning = true;
+        logMini("جاري سحب قائمة whatsapp_web من الطابور...");
+
+        new Thread(() -> {
+            try {
+                JSONObject body = new JSONObject();
+                body.put("token", token());
+                body.put("limit", 20);
+                JSONArray methods = new JSONArray();
+                methods.put("whatsapp_web");
+                body.put("methods", methods);
+
+                String res = post("/api/queue/pull", body);
+                JSONObject j = new JSONObject(res);
+                JSONArray jobs = j.optJSONArray("jobs");
+
+                if (jobs == null || jobs.length() == 0) {
+                    logMiniUi("لا توجد طلبات WhatsApp Web pending.\n" + res);
+                    return;
+                }
+
+                waWebQueue = jobs;
+                waWebIndex = 0;
+
+                logMiniUi("تم سحب " + jobs.length() + " طلب WhatsApp Web. التنفيذ داخل نفس الصفحة.");
+                runOnUiThread(() -> runNextWhatsAppWebJob());
+
+            } catch (Exception e) {
+                logMiniUi("فشل سحب WhatsApp Web: " + e.getMessage());
+            }
+        }).start();
+    }
+
+    void runNextWhatsAppWebJob() {
+        if (!waWebQueueRunning) return;
+
+        try {
+            if (waWebIndex >= waWebQueue.length()) {
+                waWebQueueRunning = false;
+                setStatus("انتهى تنفيذ طابور WhatsApp Web.");
+                logMini("اكتمل تنفيذ WhatsApp Web.");
+                return;
+            }
+
+            JSONObject job = waWebQueue.getJSONObject(waWebIndex);
+            waWebIndex++;
+
+            waWebJobId = job.optString("id", job.optString("queue_id", ""));
+            waWebPhone = cleanPhone(job.optString("phone", ""));
+            waWebMessage = job.optString("body", job.optString("message", ""));
+
+            waWebAttempts = 0;
+            waWebResultSent = false;
+
+            setStatus("WhatsApp Web: " + waWebIndex + "/" + waWebQueue.length() + " - " + waWebPhone);
+            loadWhatsAppWebSendPage();
+
+        } catch (Exception e) {
+            logMini("خطأ تجهيز الطلب التالي: " + e.getMessage());
+            handler.postDelayed(() -> runNextWhatsAppWebJob(), 900);
+        }
+    }
+
+    void loadWhatsAppWebSendPage() {
+        try {
+            if (waWebPhone.length() == 0 || waWebMessage.length() == 0) {
+                setStatus("لا يوجد رقم أو رسالة WhatsApp Web.");
+                return;
+            }
+
+            String encoded = URLEncoder.encode(waWebMessage, "UTF-8");
+            String url = "https://web.whatsapp.com/send?phone=" + waWebPhone + "&text=" + encoded + "&app_absent=0";
+
+            logMini("تحديث نفس WhatsApp Web للمحادثة: " + waWebPhone);
+            waWebView.loadUrl(url);
+
+            scheduleWhatsAppWebFastAttempts();
+
+        } catch (Exception e) {
+            setStatus("خطأ تجهيز رابط WhatsApp Web: " + e.getMessage());
+        }
+    }
+
+    void scheduleWhatsAppWebFastAttempts() {
+        scheduleWhatsAppWebAttempt(700);
+        scheduleWhatsAppWebAttempt(1400);
+        scheduleWhatsAppWebAttempt(2300);
+        scheduleWhatsAppWebAttempt(3500);
+    }
+
+    void scheduleWhatsAppWebAttempt(long delayMs) {
+        handler.postDelayed(() -> attemptWhatsAppWebSend(), delayMs);
+    }
+
+    void attemptWhatsAppWebSend() {
+        if (waWebResultSent) return;
+
+        waWebAttempts++;
+        setStatus("محاولة إرسال WhatsApp Web رقم " + waWebAttempts + " ...");
+
+        final String js =
+                "(function(){\n" +
+                "  function vis(e){ if(!e) return false; var r=e.getBoundingClientRect(); return r.width>0 && r.height>0; }\n" +
+                "  function btnFrom(e){ return e.closest('button') || e.closest('[role=\"button\"]') || e; }\n" +
+                "  var selectors=[\n" +
+                "    'span[data-icon=\"send\"]', '[data-icon=\"send\"]',\n" +
+                "    '[data-testid=\"send\"]', '[data-icon=\"wds-ic-send-filled\"]',\n" +
+                "    'button[aria-label*=\"Send\"]', 'div[aria-label*=\"Send\"]',\n" +
+                "    'button[aria-label*=\"إرسال\"]', 'div[aria-label*=\"إرسال\"]'\n" +
+                "  ];\n" +
+                "  for(var s of selectors){\n" +
+                "    var arr=[].slice.call(document.querySelectorAll(s));\n" +
+                "    for(var el of arr){ var b=btnFrom(el); if(vis(b)){ b.click(); return 'CLICKED_SEND'; } }\n" +
+                "  }\n" +
+                "  var boxes=[].slice.call(document.querySelectorAll('div[contenteditable=\"true\"]')).filter(vis);\n" +
+                "  return 'NO_SEND_BUTTON boxes=' + boxes.length + ' title=' + document.title;\n" +
+                "})()";
+
+        waWebView.evaluateJavascript(js, value -> {
+            String v = String.valueOf(value);
+            logMini("WA_WEB_MAIN_ATTEMPT_" + waWebAttempts + ": " + v);
+
+            if (v.contains("CLICKED_SEND")) {
+                waWebResultSent = true;
+                setStatus("تم إرسال WhatsApp Web من نفس الصفحة.");
+                markWhatsAppWebResult("sent", "whatsapp_web_sent_by_embedded_main_webview_v22");
+
+                if (waWebQueueRunning) {
+                    handler.postDelayed(() -> runNextWhatsAppWebJob(), 900);
+                }
+                return;
+            }
+
+            if (waWebAttempts < 12) {
+                scheduleWhatsAppWebAttempt(900);
+            } else {
+                waWebResultSent = true;
+                setStatus("فشل العثور على زر إرسال WhatsApp Web.");
+                markWhatsAppWebResult("failed", "whatsapp_web_send_button_not_found_embedded_main_webview_v22");
+
+                if (waWebQueueRunning) {
+                    handler.postDelayed(() -> runNextWhatsAppWebJob(), 900);
+                }
+            }
+        });
+    }
+
+    void markWhatsAppWebResult(String status, String note) {
+        new Thread(() -> {
+            try {
+                if (waWebJobId.length() == 0) return;
+
+                JSONObject body = new JSONObject();
+                body.put("token", token());
+                body.put("queue_id", waWebJobId);
+                body.put("id", waWebJobId);
+                body.put("status", status);
+                body.put("error", note);
+
+                String res = post("/api/queue/ack", body);
+                logMiniUi("ACK WhatsApp Web: " + status + " / " + waWebJobId + "\n" + res);
+
+            } catch (Exception e) {
+                logMiniUi("فشل ACK WhatsApp Web: " + e.getMessage());
+            }
+        }).start();
     }
 
     void saveSettings() {
@@ -218,7 +510,7 @@ public class MainActivity extends Activity {
                 .putBoolean("m_whatsapp_web", waWebBox == null || waWebBox.isChecked())
                 .apply();
 
-        log("تم حفظ الرابط والتوكن والطرق.");
+        logMini("تم حفظ الرابط والتوكن والطرق.");
     }
 
     void loadTokenFromServer() {
@@ -239,10 +531,10 @@ public class MainActivity extends Activity {
                 runOnUiThread(() -> {
                     urlInput.setText(trimSlash(u));
                     tokenInput.setText(t);
-                    log("تم تحميل التوكن:\n" + j.toString());
+                    logMini("تم تحميل التوكن.");
                 });
             } catch (Exception e) {
-                logUi("فشل تحميل التوكن: " + e.getMessage());
+                logMiniUi("فشل تحميل التوكن: " + e.getMessage());
             }
         }).start();
     }
@@ -258,9 +550,9 @@ public class MainActivity extends Activity {
                 body.put("methods", selectedMethods());
 
                 String res = post("/api/device/heartbeat", body);
-                logUi("Heartbeat OK:\n" + res);
+                logMiniUi("Heartbeat OK:\n" + res);
             } catch (Exception e) {
-                logUi("Heartbeat FAILED: " + e.getMessage());
+                logMiniUi("Heartbeat FAILED: " + e.getMessage());
             }
         }).start();
     }
@@ -271,15 +563,15 @@ public class MainActivity extends Activity {
             try {
                 JSONObject body = new JSONObject();
                 body.put("token", token());
-                body.put("phone", "967700000000");
+                body.put("phone", "+967782971812");
                 body.put("message", "اختبار Native من التطبيق");
                 body.put("recipient_type", "customer");
                 body.put("methods", selectedMethods());
 
                 String res = post("/api/queue/enqueue", body);
-                logUi("تمت إضافة طابور اختبار:\n" + res);
+                logMiniUi("تمت إضافة طابور اختبار:\n" + res);
             } catch (Exception e) {
-                logUi("فشل إضافة الطابور: " + e.getMessage());
+                logMiniUi("فشل إضافة الطابور: " + e.getMessage());
             }
         }).start();
     }
@@ -289,9 +581,9 @@ public class MainActivity extends Activity {
         new Thread(() -> {
             try {
                 String res = get("/api/queue/list?token=" + enc(token()));
-                logUi("Queue:\n" + res);
+                logMiniUi("Queue:\n" + res);
             } catch (Exception e) {
-                logUi("فشل عرض الطابور: " + e.getMessage());
+                logMiniUi("فشل عرض الطابور: " + e.getMessage());
             }
         }).start();
     }
@@ -299,7 +591,7 @@ public class MainActivity extends Activity {
     void pollAndExecute(int limit) {
         saveSettings();
         if (!prefs.getBoolean("full_link_enabled", true)) {
-            log("الربط الكامل غير مفعل.");
+            logMini("الربط الكامل غير مفعل.");
             return;
         }
 
@@ -315,19 +607,38 @@ public class MainActivity extends Activity {
                 JSONArray jobs = j.optJSONArray("jobs");
 
                 if (jobs == null || jobs.length() == 0) {
-                    logUi("لا توجد طلبات pending.\n" + res);
+                    logMiniUi("لا توجد طلبات pending.\n" + res);
                     return;
                 }
 
-                logUi("تم سحب " + jobs.length() + " طلب. يبدأ التنفيذ...");
+                logMiniUi("تم سحب " + jobs.length() + " طلب.");
+
+                JSONArray webJobs = new JSONArray();
 
                 for (int i = 0; i < jobs.length(); i++) {
                     JSONObject job = jobs.getJSONObject(i);
-                    executeJob(job);
-                    sleep(900);
+                    String method = job.optString("delivery_method", "");
+
+                    if (method.equals("whatsapp_web")) {
+                        webJobs.put(job);
+                    } else {
+                        executeJob(job);
+                        sleep(900);
+                    }
                 }
+
+                if (webJobs.length() > 0) {
+                    waWebQueue = webJobs;
+                    waWebIndex = 0;
+                    waWebQueueRunning = true;
+                    runOnUiThread(() -> {
+                        showWhatsAppWeb();
+                        runNextWhatsAppWebJob();
+                    });
+                }
+
             } catch (Exception e) {
-                logUi("فشل السحب/التنفيذ: " + e.getMessage());
+                logMiniUi("فشل السحب/التنفيذ: " + e.getMessage());
             }
         }).start();
     }
@@ -339,7 +650,7 @@ public class MainActivity extends Activity {
             String phone = cleanPhone(job.optString("phone", ""));
             String message = job.optString("body", job.optString("message", ""));
 
-            logUi("تنفيذ: " + method + " / " + phone + " / " + id);
+            logMiniUi("تنفيذ: " + method + " / " + phone + " / " + id);
 
             if (method.equals("sms_apk")) {
                 sendSms(phone, message);
@@ -358,14 +669,9 @@ public class MainActivity extends Activity {
                 return;
             }
 
-            if (method.equals("whatsapp_web")) {
-                openWhatsAppWebJob(id, phone, message);
-                return;
-            }
-
             ack(id, "failed", "unsupported_method_" + method);
         } catch (Exception e) {
-            logUi("خطأ تنفيذ الطلب: " + e.getMessage());
+            logMiniUi("خطأ تنفيذ الطلب: " + e.getMessage());
         }
     }
 
@@ -381,9 +687,9 @@ public class MainActivity extends Activity {
             body.put("error", error == null ? "" : error);
 
             String res = post("/api/queue/ack", body);
-            logUi("ACK " + id + " => " + status + "\n" + res);
+            logMiniUi("ACK " + id + " => " + status + "\n" + res);
         } catch (Exception e) {
-            logUi("فشل ACK: " + e.getMessage());
+            logMiniUi("فشل ACK: " + e.getMessage());
         }
     }
 
@@ -419,37 +725,19 @@ public class MainActivity extends Activity {
 
         try {
             startActivity(i);
-            logUi("فتح WhatsApp APK. Accessibility سيضغط إرسال ويرجع ACK.");
+            logMiniUi("فتح WhatsApp APK. Accessibility سيضغط إرسال.");
             scheduleWhatsAppApkAckFallback(jobId);
         } catch (Exception e) {
             Intent b = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
             b.setPackage("com.whatsapp.w4b");
             try {
                 startActivity(b);
-                logUi("فتح WhatsApp Business. Accessibility سيضغط إرسال ويرجع ACK.");
+                logMiniUi("فتح WhatsApp Business.");
                 scheduleWhatsAppApkAckFallback(jobId);
             } catch (Exception e2) {
                 ack(jobId, "failed", "whatsapp_apk_not_found");
             }
         }
-    }
-
-    void openWhatsAppWebQr() {
-        Intent i = new Intent(this, WhatsAppWebActivity.class);
-        i.putExtra("server_url", baseUrl());
-        i.putExtra("token", token());
-        startActivity(i);
-    }
-
-    void openWhatsAppWebJob(String jobId, String phone, String message) {
-        Intent i = new Intent(this, WhatsAppWebActivity.class);
-        i.putExtra("job_id", jobId);
-        i.putExtra("phone", phone);
-        i.putExtra("message", message);
-        i.putExtra("server_url", baseUrl());
-        i.putExtra("token", token());
-        startActivity(i);
-        logUi("فتح WhatsApp Web Activity للطلب: " + jobId);
     }
 
     void scheduleWhatsAppApkAckFallback(String jobId) {
@@ -458,14 +746,12 @@ public class MainActivity extends Activity {
                 try {
                     if (jobId == null || jobId.length() == 0) return;
 
-                    // fallback مقصود: إذا Accessibility ضغط إرسال فعليًا لكن لم يرجع callback،
-                    // نغلق الصف كمرسل بعد فتح واتساب بفترة كافية.
                     JSONObject body = new JSONObject();
                     body.put("token", token());
                     body.put("queue_id", jobId);
                     body.put("id", jobId);
                     body.put("status", "sent");
-                    body.put("error", "whatsapp_apk_auto_ack_fallback_after_open_v16");
+                    body.put("error", "whatsapp_apk_auto_ack_fallback_after_open_v22");
 
                     String res = post("/api/queue/ack", body);
                     prefs.edit()
@@ -474,9 +760,9 @@ public class MainActivity extends Activity {
                             .remove("pending_token")
                             .apply();
 
-                    logUi("WhatsApp APK Auto ACK fallback OK: " + jobId + "\n" + res);
+                    logMiniUi("WhatsApp APK Auto ACK fallback OK: " + jobId + "\n" + res);
                 } catch (Exception e) {
-                    logUi("WhatsApp APK Auto ACK fallback failed: " + e.getMessage());
+                    logMiniUi("WhatsApp APK Auto ACK fallback failed: " + e.getMessage());
                 }
             }).start();
         }, 14000);
@@ -488,7 +774,7 @@ public class MainActivity extends Activity {
                 .remove("pending_server_url")
                 .remove("pending_token")
                 .apply();
-        log("تم تنظيف طلب واتساب المعلق.");
+        logMini("تم تنظيف طلب واتساب المعلق.");
     }
 
     JSONArray selectedMethods() {
@@ -579,8 +865,13 @@ public class MainActivity extends Activity {
         return u;
     }
 
+    String shortUrl(String u) {
+        if (u == null) return "";
+        return u.length() > 70 ? u.substring(0, 70) + "..." : u;
+    }
+
     String buildStatusText() {
-        return "UNB Connect Native Executor\n" +
+        return "UNB Connect Embedded WhatsApp Web\n" +
                 "URL=" + baseUrl() + "\n" +
                 "TOKEN=" + token() + "\n" +
                 "FULL_LINK=" + prefs.getBoolean("full_link_enabled", true) + "\n" +
@@ -590,15 +881,21 @@ public class MainActivity extends Activity {
     void copyText(String s) {
         ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
         cm.setPrimaryClip(ClipData.newPlainText("UNB Connect", s));
-        log("تم النسخ.");
+        logMini("تم النسخ.");
     }
 
-    void log(String s) {
-        if (logView != null) logView.setText(s);
+    void setStatus(String s) {
+        runOnUiThread(() -> {
+            if (statusView != null) statusView.setText(s);
+        });
     }
 
-    void logUi(String s) {
-        runOnUiThread(() -> log(s));
+    void logMini(String s) {
+        if (miniLogView != null) miniLogView.setText(s);
+    }
+
+    void logMiniUi(String s) {
+        runOnUiThread(() -> logMini(s));
     }
 
     void sleep(long ms) {

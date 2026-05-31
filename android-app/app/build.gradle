@@ -15,7 +15,7 @@ android {
         applicationId "com.unb.connect"
         minSdk 23
         targetSdk 35
-        versionCode 20
-        versionName "0.20.0-whatsapp-web-hidden-fast-compile-fix"
+        versionCode 22
+        versionName "0.22.0-embedded-whatsapp-web-main"
     }
 }
