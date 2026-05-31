@@ -1,7 +1,9 @@
 package com.unb.connect;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.Settings;
@@ -24,6 +26,10 @@ public class MainActivity extends Activity {
     public void onCreate(Bundle b) {
         super.onCreate(b);
         prefs = getSharedPreferences("unb_connect", MODE_PRIVATE);
+
+        if (android.os.Build.VERSION.SDK_INT >= 23) {
+            requestPermissions(new String[]{Manifest.permission.CALL_PHONE}, 20);
+        }
 
         ScrollView scroll = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
@@ -176,6 +182,9 @@ public class MainActivity extends Activity {
 
                     openWhatsApp(phone, message);
                     log("WAIT_ACCESSIBILITY_SEND");
+                } else if ("call_apk".equals(method)) {
+                    openCall(phone);
+                    markResult(id, "sent", "call_opened_by_android_app");
                 } else {
                     markResult(id, "failed", "unsupported_now_" + method);
                 }
@@ -193,6 +202,24 @@ public class MainActivity extends Activity {
         in.setPackage("com.whatsapp");
         startActivity(in);
         log("WHATSAPP_OPENED=" + clean);
+    }
+
+    void openCall(String phone) {
+        String clean = phone.replaceAll("[^0-9+]", "");
+        try {
+            Intent call = new Intent(Intent.ACTION_CALL, Uri.parse("tel:" + clean));
+            if (android.os.Build.VERSION.SDK_INT < 23 || checkSelfPermission(Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
+                startActivity(call);
+                log("CALL_OPENED=" + clean);
+                return;
+            }
+        } catch (Exception e) {
+            log("CALL_DIRECT_FAILED: " + e.getMessage());
+        }
+
+        Intent dial = new Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + clean));
+        startActivity(dial);
+        log("DIAL_OPENED=" + clean);
     }
 
     void markResult(String jobId, String status, String note) {

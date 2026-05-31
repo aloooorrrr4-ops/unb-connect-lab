@@ -10,7 +10,7 @@ android {
         applicationId "com.unb.connect"
         minSdk 23
         targetSdk 35
-        versionCode 10
-        versionName "0.10.0-delayed-force-send"
+        versionCode 11
+        versionName "0.11.0-call-apk"
     }
 }
