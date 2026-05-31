@@ -172,13 +172,22 @@ public class UnbAccessibilityService extends AccessibilityService {
             int sw = dm.widthPixels;
             int sh = dm.heightPixels;
 
-            int x = Math.max(55, (int)(sw * 0.075));
-            int y1 = (int)(sh * 0.535);
-            int y2 = (int)(sh * 0.565);
+            int x = Math.max(48, (int)(sw * 0.075));
 
-            boolean a = tap(x, y1);
-            if (!a) return tap(x, y2);
-            return true;
+            int[] ys = new int[] {
+                    (int)(sh * 0.885),
+                    (int)(sh * 0.860),
+                    (int)(sh * 0.910),
+                    sh - 150,
+                    sh - 190
+            };
+
+            for (int y : ys) {
+                if (tap(x, y)) return true;
+                try { Thread.sleep(250); } catch (Exception ignored) {}
+            }
+
+            return false;
         } catch (Exception e) {
             return false;
         }
