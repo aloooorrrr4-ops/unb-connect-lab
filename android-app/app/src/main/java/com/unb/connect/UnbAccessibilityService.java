@@ -1,7 +1,11 @@
 package com.unb.connect;
 
 import android.accessibilityservice.AccessibilityService;
+import android.accessibilityservice.GestureDescription;
 import android.content.SharedPreferences;
+import android.graphics.Path;
+import android.graphics.Rect;
+import android.os.Build;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import org.json.JSONObject;
@@ -31,10 +35,22 @@ public class UnbAccessibilityService extends AccessibilityService {
             AccessibilityNodeInfo root = getRootInActiveWindow();
             if (root == null) return;
 
-            AccessibilityNodeInfo send = findSendButton(root);
-            if (send == null) return;
+            boolean clicked = false;
 
-            boolean clicked = clickNode(send);
+            AccessibilityNodeInfo send = findSendButton(root);
+            if (send != null) {
+                clicked = clickNode(send);
+            }
+
+            if (!clicked) {
+                AccessibilityNodeInfo icon = findBottomSendIcon(root);
+                if (icon != null) clicked = clickNode(icon);
+            }
+
+            if (!clicked) {
+                clicked = clickBottomLeftFallback(root);
+            }
+
             if (clicked) {
                 lastClickAt = now;
 
@@ -43,7 +59,7 @@ public class UnbAccessibilityService extends AccessibilityService {
 
                 p.edit().remove("pending_job_id").apply();
 
-                markResult(base, token, jobId, "sent", "whatsapp_send_clicked_by_accessibility");
+                markResult(base, token, jobId, "sent", "whatsapp_send_clicked_by_accessibility_fallback");
             }
         } catch (Exception ignored) {}
     }
@@ -86,6 +102,40 @@ public class UnbAccessibilityService extends AccessibilityService {
         return null;
     }
 
+    private AccessibilityNodeInfo findBottomSendIcon(AccessibilityNodeInfo root) {
+        Rect screen = new Rect();
+        root.getBoundsInScreen(screen);
+
+        return findBottomClickable(root, screen);
+    }
+
+    private AccessibilityNodeInfo findBottomClickable(AccessibilityNodeInfo n, Rect screen) {
+        if (n == null) return null;
+
+        Rect r = new Rect();
+        n.getBoundsInScreen(r);
+
+        int sw = Math.max(1, screen.width());
+        int sh = Math.max(1, screen.height());
+        int w = r.width();
+        int h = r.height();
+
+        boolean nearBottom = r.top > (int)(sh * 0.45);
+        boolean goodSize = w >= 35 && w <= 180 && h >= 35 && h <= 180;
+        boolean sideButton = r.left < (int)(sw * 0.22) || r.right > (int)(sw * 0.78);
+
+        if (n.isEnabled() && n.isClickable() && nearBottom && goodSize && sideButton) {
+            return n;
+        }
+
+        for (int i = 0; i < n.getChildCount(); i++) {
+            AccessibilityNodeInfo x = findBottomClickable(n.getChild(i), screen);
+            if (x != null) return x;
+        }
+
+        return null;
+    }
+
     private boolean clickNode(AccessibilityNodeInfo n) {
         AccessibilityNodeInfo cur = n;
 
@@ -97,6 +147,30 @@ public class UnbAccessibilityService extends AccessibilityService {
         }
 
         return false;
+    }
+
+    private boolean clickBottomLeftFallback(AccessibilityNodeInfo root) {
+        if (Build.VERSION.SDK_INT < 24) return false;
+
+        try {
+            Rect screen = new Rect();
+            root.getBoundsInScreen(screen);
+
+            int x = Math.max(45, screen.left + (int)(screen.width() * 0.07));
+            int y = screen.top + (int)(screen.height() * 0.55);
+
+            Path path = new Path();
+            path.moveTo(x, y);
+
+            GestureDescription gesture = new GestureDescription.Builder()
+                    .addStroke(new GestureDescription.StrokeDescription(path, 0, 120))
+                    .build();
+
+            dispatchGesture(gesture, null, null);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private void markResult(String base, String token, String jobId, String status, String note) {
