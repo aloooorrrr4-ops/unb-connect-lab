@@ -301,7 +301,7 @@ public class WhatsAppWebActivity extends Activity {
 
     String shortUrl(String u) {
         if (u == null) return "";
-        return u.length() > 70 ? u.substring(0, 70) + "...";
+        return u.length() > 70 ? u.substring(0, 70) + "..." : u;
     }
 
     void loadSendPage() {
