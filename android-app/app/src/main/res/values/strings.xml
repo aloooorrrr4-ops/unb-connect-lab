@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">UNB Connect</string>
+    <string name="accessibility_name">UNB WhatsApp Sender</string>
+    <string name="accessibility_desc">يضغط زر إرسال واتساب تلقائياً لطلبات UNB Connect.</string>
 </resources>

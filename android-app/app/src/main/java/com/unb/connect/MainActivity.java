@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.content.SharedPreferences;
 import android.view.Gravity;
 import android.widget.*;
@@ -38,7 +39,7 @@ public class MainActivity extends Activity {
         root.addView(title);
 
         TextView desc = new TextView(this);
-        desc.setText("نسخة مؤقتة: التحكم من Termux ثم لاحقاً من النظام.");
+        desc.setText("نسخة مؤقتة: التحكم من Termux + إرسال واتساب عبر Accessibility.");
         desc.setTextSize(17);
         desc.setGravity(Gravity.RIGHT);
         root.addView(desc);
@@ -61,9 +62,24 @@ public class MainActivity extends Activity {
         pair.setOnClickListener(v -> pairDevice());
         root.addView(pair);
 
+        Button acc = button("فتح إعدادات Accessibility");
+        acc.setOnClickListener(v -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
+        root.addView(acc);
+
         Button poll = button("سحب وتنفيذ طلب واحد");
         poll.setOnClickListener(v -> pollOnce());
         root.addView(poll);
+
+        Button clear = button("تنظيف طلب واتساب المعلق");
+        clear.setOnClickListener(v -> {
+            prefs.edit()
+                    .remove("pending_job_id")
+                    .remove("pending_server_url")
+                    .remove("pending_token")
+                    .apply();
+            log("تم تنظيف الطلب المعلق");
+        });
+        root.addView(clear);
 
         logView = new TextView(this);
         logView.setTextSize(14);
@@ -152,8 +168,14 @@ public class MainActivity extends Activity {
                 log("METHOD=" + method);
 
                 if ("whatsapp_apk".equals(method)) {
+                    prefs.edit()
+                            .putString("pending_job_id", id)
+                            .putString("pending_server_url", base())
+                            .putString("pending_token", token())
+                            .apply();
+
                     openWhatsApp(phone, message);
-                    markResult(id, "sent", "whatsapp_opened_manual_send");
+                    log("WAIT_ACCESSIBILITY_SEND");
                 } else {
                     markResult(id, "failed", "unsupported_now_" + method);
                 }
@@ -168,6 +190,7 @@ public class MainActivity extends Activity {
         String text = URLEncoder.encode(message, "UTF-8").replace("+", "%20");
         Uri uri = Uri.parse("https://wa.me/" + clean + "?text=" + text);
         Intent in = new Intent(Intent.ACTION_VIEW, uri);
+        in.setPackage("com.whatsapp");
         startActivity(in);
         log("WHATSAPP_OPENED=" + clean);
     }
