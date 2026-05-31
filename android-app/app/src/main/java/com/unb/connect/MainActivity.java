@@ -59,6 +59,7 @@ public class MainActivity extends Activity {
 
     TextView statusView;
     TextView miniLogView;
+    TextView linkSummaryView;
 
     CheckBox fullLinkBox;
     CheckBox callBox;
@@ -118,38 +119,38 @@ public class MainActivity extends Activity {
     }
 
     void buildUi() {
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-        root.setBackgroundColor(Color.rgb(245, 247, 250));
-
+        // UNB_WA_WEB_SINGLE_SCROLL_BOTTOM_V29
+        // صفحة واحدة فقط: كل الواجهة فوق، و WhatsApp Web في آخر الصفحة.
         controlsScroll = new ScrollView(this);
+        controlsScroll.setFillViewport(false);
+        controlsScroll.setBackgroundColor(Color.rgb(245, 247, 250));
+
         LinearLayout controls = new LinearLayout(this);
         controls.setOrientation(LinearLayout.VERTICAL);
-        controls.setPadding(dp(8), dp(8), dp(8), dp(6));
+        controls.setPadding(dp(8), dp(8), dp(8), dp(18));
         controls.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-        controlsScroll.addView(controls);
+
+        controlsScroll.addView(controls, new ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        ));
 
         controls.addView(header());
         controls.addView(systemLinkCompact());
+        controls.addView(methodConnectionCard());
         controls.addView(methodsCompact());
         controls.addView(actionsCompact());
-
-        // الرئيسية فوق، و WhatsApp Web ثابت في الثلث الأخير.
-        root.addView(controlsScroll, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                2
-        ));
+        controls.addView(whatsappToolbar());
 
         webPanel = new LinearLayout(this);
         webPanel.setOrientation(LinearLayout.VERTICAL);
-        // UNB_WA_WEB_CONNECTED_LAYOUT_V28
-        // متصل بالشاشة الرئيسية، بدون شكل صفحة ثانية.
         webPanel.setBackgroundColor(Color.WHITE);
         webPanel.setPadding(0, 0, 0, 0);
 
-        webPanel.addView(whatsappToolbar());
+        TextView bottomTitle = tv("WhatsApp Web - آخر الصفحة", 18, Typeface.BOLD, Color.rgb(17, 24, 39));
+        bottomTitle.setGravity(Gravity.CENTER);
+        bottomTitle.setPadding(dp(8), dp(10), dp(8), dp(6));
+        webPanel.addView(bottomTitle);
 
         waWebHolder = new LinearLayout(this);
         waWebHolder.setOrientation(LinearLayout.VERTICAL);
@@ -163,17 +164,15 @@ public class MainActivity extends Activity {
 
         webPanel.addView(waWebHolder, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1
+                dp(680)
         ));
 
-        root.addView(webPanel, new LinearLayout.LayoutParams(
+        controls.addView(webPanel, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1
+                ViewGroup.LayoutParams.WRAP_CONTENT
         ));
 
-        setContentView(root);
+        setContentView(controlsScroll);
     }
 
     View header() {
@@ -187,7 +186,7 @@ public class MainActivity extends Activity {
         brand.setGravity(Gravity.CENTER);
         h.addView(brand);
 
-        statusView = tv("وضع WhatsApp Web السهل داخل الصفحة", 13, Typeface.BOLD, Color.rgb(187, 247, 208));
+        statusView = tv("صفحة واحدة و WhatsApp Web في آخرها", 13, Typeface.BOLD, Color.rgb(187, 247, 208));
         statusView.setGravity(Gravity.CENTER);
         h.addView(statusView);
 
@@ -217,6 +216,19 @@ public class MainActivity extends Activity {
         row.addView(btn("Heartbeat", GREEN, v -> heartbeat()), weight());
         c.addView(row);
 
+        return c;
+    }
+
+    View methodConnectionCard() {
+        LinearLayout c = card();
+        c.addView(title("رابط وتوكن كل طريقة"));
+
+        linkSummaryView = tv("", 12, Typeface.NORMAL, Color.rgb(31, 41, 55));
+        linkSummaryView.setTextDirection(View.TEXT_DIRECTION_LTR);
+        linkSummaryView.setGravity(Gravity.LEFT);
+        c.addView(linkSummaryView);
+
+        refreshLinkSummary();
         return c;
     }
 
@@ -375,43 +387,20 @@ public class MainActivity extends Activity {
 
     void focusWhatsAppWeb() {
         runOnUiThread(() -> {
-            if (controlsScroll != null) {
-                controlsScroll.setLayoutParams(new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        0,
-                        1
-                ));
-            }
-            if (webPanel != null) {
-                webPanel.setLayoutParams(new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        0,
-                        2
-                ));
-            }
-            showWhatsAppWeb();
             ensureWhatsAppWebLoaded();
-            setStatus("تم تكبير WhatsApp Web مع بقائه متصلًا بالشاشة الرئيسية.");
+            if (controlsScroll != null && webPanel != null) {
+                controlsScroll.post(() -> controlsScroll.smoothScrollTo(0, webPanel.getTop()));
+            }
+            setStatus("WhatsApp Web في آخر الصفحة وجاهز.");
         });
     }
 
     void showControls() {
         runOnUiThread(() -> {
             if (controlsScroll != null) {
-                controlsScroll.setLayoutParams(new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        0,
-                        2
-                ));
+                controlsScroll.post(() -> controlsScroll.smoothScrollTo(0, 0));
             }
-            if (webPanel != null) {
-                webPanel.setLayoutParams(new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        0,
-                        1
-                ));
-            }
-            setStatus("الشاشة الرئيسية فوق و WhatsApp Web ثابت في الثلث الأخير.");
+            setStatus("تم الرجوع لأعلى الشاشة الرئيسية.");
         });
     }
 
@@ -668,7 +657,7 @@ public class MainActivity extends Activity {
 
                     waWebResultSent = true;
                     setStatus("لم يفتح البحث المحادثة داخل WhatsApp Web.");
-                    markWhatsAppWebResult("failed", "whatsapp_web_search_chat_not_found_connected_v28");
+                    markWhatsAppWebResult("failed", "whatsapp_web_search_chat_not_found_single_scroll_v29");
 
                     if (waWebQueueRunning) {
                         handler.postDelayed(() -> runNextWhatsAppWebJob(), 900);
@@ -730,7 +719,7 @@ public class MainActivity extends Activity {
                     if (r.contains("YES_BUTTON") || r.contains("YES_ENTER")) {
                         waWebResultSent = true;
                         setStatus("تم إرسال WhatsApp Web من نفس الصفحة.");
-                        markWhatsAppWebResult("sent", "whatsapp_web_sent_by_connected_search_send_v28");
+                        markWhatsAppWebResult("sent", "whatsapp_web_sent_by_single_scroll_bottom_v29");
 
                         if (waWebQueueRunning) {
                             handler.postDelayed(() -> runNextWhatsAppWebJob(), 800);
@@ -745,7 +734,7 @@ public class MainActivity extends Activity {
 
                     waWebResultSent = true;
                     setStatus("فشل الإرسال من صندوق WhatsApp Web.");
-                    markWhatsAppWebResult("failed", "whatsapp_web_direct_send_failed_connected_v28");
+                    markWhatsAppWebResult("failed", "whatsapp_web_direct_send_failed_single_scroll_v29");
 
                     if (waWebQueueRunning) {
                         handler.postDelayed(() -> runNextWhatsAppWebJob(), 900);
@@ -797,7 +786,7 @@ public class MainActivity extends Activity {
             if (v.contains("CLICKED_SEND")) {
                 waWebResultSent = true;
                 setStatus("تم إرسال WhatsApp Web.");
-                markWhatsAppWebResult("sent", "whatsapp_web_sent_by_connected_search_send_v28");
+                markWhatsAppWebResult("sent", "whatsapp_web_sent_by_single_scroll_bottom_v29");
 
                 if (waWebQueueRunning) {
                     handler.postDelayed(() -> runNextWhatsAppWebJob(), 900);
@@ -810,7 +799,7 @@ public class MainActivity extends Activity {
             } else {
                 waWebResultSent = true;
                 setStatus("فشل العثور على زر إرسال WhatsApp Web.");
-                markWhatsAppWebResult("failed", "whatsapp_web_send_button_not_found_connected_search_send_v28");
+                markWhatsAppWebResult("failed", "whatsapp_web_send_button_not_found_single_scroll_bottom_v29");
 
                 if (waWebQueueRunning) {
                     handler.postDelayed(() -> runNextWhatsAppWebJob(), 900);
@@ -858,7 +847,18 @@ public class MainActivity extends Activity {
                 .putBoolean("m_whatsapp_web", waWebBox == null || waWebBox.isChecked())
                 .apply();
 
+        refreshLinkSummary();
         logMini("تم حفظ الرابط والتوكن والطرق.");
+    }
+
+    void refreshLinkSummary() {
+        String summary =
+                "call_apk\\nURL=" + baseUrl() + "\\nTOKEN=" + shortToken(token()) + "\\n\\n" +
+                "sms_apk\\nURL=" + baseUrl() + "\\nTOKEN=" + shortToken(token()) + "\\n\\n" +
+                "whatsapp_apk\\nURL=" + baseUrl() + "\\nTOKEN=" + shortToken(token()) + "\\n\\n" +
+                "whatsapp_web\\nURL=" + baseUrl() + "\\nTOKEN=" + shortToken(token());
+
+        if (linkSummaryView != null) linkSummaryView.setText(summary);
     }
 
     void heartbeat() {
