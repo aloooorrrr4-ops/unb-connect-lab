@@ -15,7 +15,7 @@ android {
         applicationId "com.unb.connect"
         minSdk 23
         targetSdk 35
-        versionCode 32
-        versionName "0.32.0-fix-v31-shorttoken"
+        versionCode 35
+        versionName "0.35.0-wa-web-verified-compose-repair"
     }
 }
