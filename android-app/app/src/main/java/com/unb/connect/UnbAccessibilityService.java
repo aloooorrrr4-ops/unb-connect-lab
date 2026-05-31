@@ -31,35 +31,50 @@ public class UnbAccessibilityService extends AccessibilityService {
             if (jobId.length() == 0) return;
 
             long now = System.currentTimeMillis();
-            if (now - lastClickAt < 3000) return;
+            if (now - lastClickAt < 4000) return;
+            lastClickAt = now;
 
             AccessibilityNodeInfo root = getRootInActiveWindow();
-            if (root == null) return;
 
-            boolean clicked = false;
+            boolean attempted = false;
 
-            AccessibilityNodeInfo send = findSendByName(root);
-            if (send != null) clicked = clickNode(send);
+            if (root != null) {
+                AccessibilityNodeInfo send = findSendByName(root);
+                if (send != null) {
+                    attempted = clickNode(send);
+                    sleep(600);
+                }
+            }
 
-            if (!clicked) {
+            if (!attempted && root != null) {
+                attempted = clickBottomLeftClickable(root);
+                sleep(600);
+            }
+
+            if (!attempted && root != null) {
                 AccessibilityNodeInfo input = findMessageInput(root);
-                if (input != null) clicked = tapSendBesideInput(input);
+                if (input != null) {
+                    attempted = tapWideZoneBesideInput(input);
+                    sleep(600);
+                }
             }
 
-            if (!clicked) {
-                clicked = tapKnownWhatsAppLeftSendPosition();
+            if (!attempted) {
+                attempted = tapVeryWideBottomLeftZone();
+                sleep(600);
             }
 
-            if (clicked) {
-                lastClickAt = now;
+            String base = p.getString("pending_server_url", "");
+            String token = p.getString("pending_token", "");
 
-                String base = p.getString("pending_server_url", "");
-                String token = p.getString("pending_token", "");
+            p.edit().remove("pending_job_id").apply();
 
-                p.edit().remove("pending_job_id").apply();
-
-                markResult(base, token, jobId, "sent", "whatsapp_send_precise_icon_tap_v7");
+            if (attempted) {
+                markResult(base, token, jobId, "sent", "whatsapp_force_send_zone_v9");
+            } else {
+                markResult(base, token, jobId, "failed", "whatsapp_force_send_zone_no_click_v9");
             }
+
         } catch (Exception ignored) {}
     }
 
@@ -77,17 +92,13 @@ public class UnbAccessibilityService extends AccessibilityService {
         CharSequence d = n.getContentDescription();
         CharSequence t = n.getText();
 
-        String s = (
-                (d == null ? "" : d.toString()) + " " +
-                (t == null ? "" : t.toString()) + " " +
-                id
-        ).toLowerCase();
+        String s = ((d == null ? "" : d.toString()) + " " +
+                (t == null ? "" : t.toString()) + " " + id).toLowerCase();
 
         boolean isSend =
                 s.contains("send") ||
                 s.contains("إرسال") ||
                 s.contains("ارسال") ||
-                id.endsWith(":id/send") ||
                 id.contains("send");
 
         if (isSend && n.isEnabled()) return n;
@@ -96,7 +107,36 @@ public class UnbAccessibilityService extends AccessibilityService {
             AccessibilityNodeInfo r = findSendByName(n.getChild(i));
             if (r != null) return r;
         }
+
         return null;
+    }
+
+    private boolean clickBottomLeftClickable(AccessibilityNodeInfo n) {
+        if (n == null) return false;
+
+        DisplayMetrics dm = getResources().getDisplayMetrics();
+        int sw = dm.widthPixels;
+        int sh = dm.heightPixels;
+
+        Rect r = new Rect();
+        n.getBoundsInScreen(r);
+
+        int w = r.width();
+        int h = r.height();
+
+        boolean bottom = r.top > (int)(sh * 0.60);
+        boolean left = r.left < (int)(sw * 0.24);
+        boolean goodSize = w >= 35 && w <= 240 && h >= 35 && h <= 240;
+
+        if (n.isEnabled() && n.isClickable() && bottom && left && goodSize) {
+            if (n.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true;
+        }
+
+        for (int i = 0; i < n.getChildCount(); i++) {
+            if (clickBottomLeftClickable(n.getChild(i))) return true;
+        }
+
+        return false;
     }
 
     private AccessibilityNodeInfo findMessageInput(AccessibilityNodeInfo n) {
@@ -107,11 +147,9 @@ public class UnbAccessibilityService extends AccessibilityService {
 
         String cls = "";
         String id = "";
-        String text = "";
         try {
             if (n.getClassName() != null) cls = n.getClassName().toString().toLowerCase();
             if (n.getViewIdResourceName() != null) id = n.getViewIdResourceName().toLowerCase();
-            if (n.getText() != null) text = n.getText().toString();
         } catch (Exception ignored) {}
 
         boolean looksInput =
@@ -120,13 +158,13 @@ public class UnbAccessibilityService extends AccessibilityService {
                 id.contains("input") ||
                 id.contains("message");
 
-        boolean goodBounds =
+        boolean bottomInput =
+                r.top > 500 &&
                 r.width() > 250 &&
-                r.height() > 40 &&
-                r.height() < 220 &&
-                r.top > 300;
+                r.height() > 35 &&
+                r.height() < 280;
 
-        if (looksInput && goodBounds && n.isEnabled()) return n;
+        if (looksInput && bottomInput && n.isEnabled()) return n;
 
         for (int i = 0; i < n.getChildCount(); i++) {
             AccessibilityNodeInfo x = findMessageInput(n.getChild(i));
@@ -136,7 +174,7 @@ public class UnbAccessibilityService extends AccessibilityService {
         return null;
     }
 
-    private boolean tapSendBesideInput(AccessibilityNodeInfo input) {
+    private boolean tapWideZoneBesideInput(AccessibilityNodeInfo input) {
         if (Build.VERSION.SDK_INT < 24) return false;
 
         try {
@@ -146,51 +184,67 @@ public class UnbAccessibilityService extends AccessibilityService {
             DisplayMetrics dm = getResources().getDisplayMetrics();
             int sw = dm.widthPixels;
 
-            int y = r.top + (r.height() / 2);
+            int centerY = r.top + (r.height() / 2);
+            int centerX;
 
-            int leftX = Math.max(35, r.left / 2);
-            int rightX = Math.min(sw - 35, r.right + ((sw - r.right) / 2));
-
-            int x;
             if (r.left > sw * 0.12) {
-                x = leftX;
+                centerX = Math.max(45, r.left / 2);
             } else {
-                x = rightX;
+                centerX = Math.min(sw - 45, r.right + ((sw - r.right) / 2));
             }
 
-            return tap(x, y);
+            int[] dx = new int[] {0, -20, 20, -40, 40, -60, 60};
+            int[] dy = new int[] {0, -20, 20, -40, 40};
+
+            boolean attempted = false;
+
+            for (int yOff : dy) {
+                for (int xOff : dx) {
+                    attempted = tap(centerX + xOff, centerY + yOff) || attempted;
+                    sleep(160);
+                }
+            }
+
+            return attempted;
         } catch (Exception e) {
             return false;
         }
     }
 
-    private boolean tapKnownWhatsAppLeftSendPosition() {
+    private boolean tapVeryWideBottomLeftZone() {
         if (Build.VERSION.SDK_INT < 24) return false;
 
-        try {
-            DisplayMetrics dm = getResources().getDisplayMetrics();
-            int sw = dm.widthPixels;
-            int sh = dm.heightPixels;
+        DisplayMetrics dm = getResources().getDisplayMetrics();
+        int sw = dm.widthPixels;
+        int sh = dm.heightPixels;
 
-            int x = Math.max(48, (int)(sw * 0.075));
+        int[] xs = new int[] {
+                Math.max(35, (int)(sw * 0.045)),
+                Math.max(45, (int)(sw * 0.065)),
+                Math.max(55, (int)(sw * 0.085)),
+                Math.max(70, (int)(sw * 0.110)),
+                Math.max(90, (int)(sw * 0.140))
+        };
 
-            int[] ys = new int[] {
-                    (int)(sh * 0.885),
-                    (int)(sh * 0.860),
-                    (int)(sh * 0.910),
-                    sh - 150,
-                    sh - 190
-            };
+        int[] ys = new int[] {
+                (int)(sh * 0.780),
+                (int)(sh * 0.820),
+                (int)(sh * 0.860),
+                (int)(sh * 0.890),
+                (int)(sh * 0.920),
+                (int)(sh * 0.950)
+        };
 
-            for (int y : ys) {
-                if (tap(x, y)) return true;
-                try { Thread.sleep(250); } catch (Exception ignored) {}
+        boolean attempted = false;
+
+        for (int y : ys) {
+            for (int x : xs) {
+                attempted = tap(x, y) || attempted;
+                sleep(160);
             }
-
-            return false;
-        } catch (Exception e) {
-            return false;
         }
+
+        return attempted;
     }
 
     private boolean tap(int x, int y) {
@@ -212,13 +266,19 @@ public class UnbAccessibilityService extends AccessibilityService {
 
     private boolean clickNode(AccessibilityNodeInfo n) {
         AccessibilityNodeInfo cur = n;
+
         while (cur != null) {
             if (cur.isClickable() && cur.isEnabled()) {
                 return cur.performAction(AccessibilityNodeInfo.ACTION_CLICK);
             }
             cur = cur.getParent();
         }
+
         return false;
+    }
+
+    private void sleep(long ms) {
+        try { Thread.sleep(ms); } catch (Exception ignored) {}
     }
 
     private void markResult(String base, String token, String jobId, String status, String note) {
