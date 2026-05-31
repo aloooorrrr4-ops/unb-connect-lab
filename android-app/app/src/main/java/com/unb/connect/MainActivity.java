@@ -47,6 +47,18 @@ public class MainActivity extends Activity {
     Handler handler = new Handler(Looper.getMainLooper());
     Handler ackHandler = new Handler(Looper.getMainLooper());
 
+    // UNB_V42_AUTO_PULL_10_SECONDS_FIELDS
+    boolean autoPullStartedV42 = false;
+    boolean autoPullBusyV42 = false;
+    long lastCallApkAtV42 = 0L;
+    final long AUTO_PULL_INTERVAL_V42 = 10000L;
+    final long CALL_APK_GUARD_MS_V42 = 90000L;
+    Runnable autoPullRunnableV42 = new Runnable() {
+        @Override public void run() {
+            autoPullTickV42();
+        }
+    };
+
     SharedPreferences prefs;
 
     ScrollView controlsScroll;
@@ -58,6 +70,7 @@ public class MainActivity extends Activity {
     EditText waSearchInput;
 
     TextView statusView;
+    TextView brandView;
     TextView miniLogView;
     TextView linkSummaryView;
 
@@ -188,6 +201,8 @@ public class MainActivity extends Activity {
         setContentView(controlsScroll);
     
         refreshOnAppOpenV40();
+        refreshBrandFromPrefsV42();
+        startAutoPullV42();
 }
 
     View header() {
@@ -197,9 +212,9 @@ public class MainActivity extends Activity {
         h.setPadding(dp(10), dp(10), dp(10), dp(10));
         h.setBackgroundColor(DARK);
 
-        TextView brand = tv("UNB Connect", 21, Typeface.BOLD, Color.WHITE);
-        brand.setGravity(Gravity.CENTER);
-        h.addView(brand);
+        brandView = tv(appHeaderTextV42(), 21, Typeface.BOLD, Color.WHITE);
+        brandView.setGravity(Gravity.CENTER);
+        h.addView(brandView);
 
         statusView = tv("وضع WhatsApp Web السهل داخل الصفحة", 13, Typeface.BOLD, Color.rgb(187, 247, 208));
         statusView.setGravity(Gravity.CENTER);
@@ -236,12 +251,21 @@ public class MainActivity extends Activity {
 
     View methodConnectionCard() {
         LinearLayout c = card();
-        c.addView(title("رابط وتوكن كل طريقة"));
+        c.addView(title("توكن طرق الإرسال"));
 
-        linkSummaryView = tv("", 12, Typeface.NORMAL, Color.rgb(31, 41, 55));
-        linkSummaryView.setTextDirection(View.TEXT_DIRECTION_LTR);
-        linkSummaryView.setGravity(Gravity.LEFT);
+        linkSummaryView = tv("اضغط أي طريقة لنسخ URL + TOKEN + METHOD", 12, Typeface.BOLD, Color.rgb(31, 41, 55));
+        linkSummaryView.setGravity(Gravity.CENTER);
         c.addView(linkSummaryView);
+
+        LinearLayout r1 = row();
+        r1.addView(btn("☎ Call", BLUE, v -> copyMethodTokenV42("call_apk")), weight());
+        r1.addView(btn("✉ SMS", GREEN, v -> copyMethodTokenV42("sms_apk")), weight());
+        c.addView(r1);
+
+        LinearLayout r2 = row();
+        r2.addView(btn("WA APK", ORANGE, v -> copyMethodTokenV42("whatsapp_apk")), weight());
+        r2.addView(btn("WA Web", BLUE, v -> copyMethodTokenV42("whatsapp_web")), weight());
+        c.addView(r2);
 
         refreshLinkSummary();
         return c;
@@ -596,7 +620,7 @@ public class MainActivity extends Activity {
         try {
             if (waWebIndex >= waWebQueue.length()) {
                 waWebQueueRunning = false;
-                setStatus("انتهى تنفيذ طابور WhatsApp Web.");
+                logMini("انتهى تنفيذ طابور WhatsApp Web.");
                 logMini("اكتمل تنفيذ WhatsApp Web.");
                 return;
             }
@@ -945,14 +969,190 @@ void verifyWhatsAppWebChatReadyThenSend() {
     }
 
     void refreshLinkSummary() {
-        String summary =
-                "call_apk\nURL=" + baseUrl() + "\nTOKEN=" + shortToken(token()) + "\n\n" +
-                "sms_apk\nURL=" + baseUrl() + "\nTOKEN=" + shortToken(token()) + "\n\n" +
-                "whatsapp_apk\nURL=" + baseUrl() + "\nTOKEN=" + shortToken(token()) + "\n\n" +
-                "whatsapp_web\nURL=" + baseUrl() + "\nTOKEN=" + shortToken(token());
-
-        if (linkSummaryView != null) linkSummaryView.setText(summary);
+        if (linkSummaryView != null) {
+            linkSummaryView.setText("اضغط أي طريقة لنسخ URL + TOKEN + METHOD");
+        }
     }
+
+
+    // UNB_V42_HEADER_INSTITUTION_AND_COPY_METHODS
+    String appHeaderTextV42() {
+        String name = prefs.getString("institution_name", "").trim();
+        if (name.length() == 0) name = prefs.getString("company_name", "").trim();
+        if (name.length() == 0) name = prefs.getString("tenant_name", "").trim();
+
+        if (name.length() > 0) {
+            return "تطبيق خاص بمؤسسة " + name;
+        }
+
+        return "تطبيق المتابعه للنظام الأقوى للتأجير";
+    }
+
+    void refreshBrandFromPrefsV42() {
+        runOnUiThread(() -> {
+            try {
+                if (brandView != null) brandView.setText(appHeaderTextV42());
+            } catch (Exception ignored) {}
+        });
+    }
+
+    void saveInstitutionNameFromResponseV42(String res) {
+        try {
+            String name = findInstitutionNameInJsonV42(new JSONObject(res));
+            if (name != null) name = name.trim();
+            if (name != null && name.length() > 0 && name.length() < 120) {
+                prefs.edit().putString("institution_name", name).apply();
+                refreshBrandFromPrefsV42();
+                logMini("تم تحديث اسم المؤسسة: " + name);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    String findInstitutionNameInJsonV42(Object obj) {
+        try {
+            if (obj instanceof JSONObject) {
+                JSONObject j = (JSONObject) obj;
+
+                String[] preferred = new String[]{
+                    "institution_name", "institutionName",
+                    "company_name", "companyName",
+                    "tenant_name", "tenantName",
+                    "organization_name", "organizationName"
+                };
+
+                for (String k : preferred) {
+                    if (j.has(k) && !j.isNull(k)) {
+                        String v = String.valueOf(j.opt(k)).trim();
+                        if (v.length() > 0 && !v.equals("null")) return v;
+                    }
+                }
+
+                java.util.Iterator<String> it = j.keys();
+                while (it.hasNext()) {
+                    String k = it.next();
+                    Object v = j.opt(k);
+                    if (v instanceof JSONObject || v instanceof JSONArray) {
+                        String found = findInstitutionNameInJsonV42(v);
+                        if (found != null && found.trim().length() > 0) return found.trim();
+                    }
+                }
+            }
+
+            if (obj instanceof JSONArray) {
+                JSONArray a = (JSONArray) obj;
+                for (int i = 0; i < a.length(); i++) {
+                    String found = findInstitutionNameInJsonV42(a.opt(i));
+                    if (found != null && found.trim().length() > 0) return found.trim();
+                }
+            }
+        } catch (Exception ignored) {}
+
+        return "";
+    }
+
+    void copyMethodTokenV42(String method) {
+        try {
+            saveSettings();
+            String payload =
+                "METHOD=" + method + "\n" +
+                "URL=" + baseUrl() + "\n" +
+                "TOKEN=" + token();
+
+            ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            cm.setPrimaryClip(ClipData.newPlainText(method, payload));
+            logMini("تم نسخ بيانات " + method);
+        } catch (Exception e) {
+            logMini("فشل نسخ بيانات الطريقة: " + e.getMessage());
+        }
+    }
+
+    // UNB_V42_AUTO_PULL_10_SECONDS
+    void startAutoPullV42() {
+        if (autoPullStartedV42) return;
+        autoPullStartedV42 = true;
+        logMini("V42 Auto Pull يعمل كل 10 ثواني.");
+        scheduleAutoPullV42(2500L);
+    }
+
+    void scheduleAutoPullV42(long delayMs) {
+        try {
+            handler.removeCallbacks(autoPullRunnableV42);
+            handler.postDelayed(autoPullRunnableV42, delayMs);
+        } catch (Exception ignored) {}
+    }
+
+    void autoPullTickV42() {
+        try {
+            if (!prefs.getBoolean("full_link_enabled", true)) {
+                scheduleAutoPullV42(AUTO_PULL_INTERVAL_V42);
+                return;
+            }
+
+            if (autoPullBusyV42 || waWebQueueRunning) {
+                scheduleAutoPullV42(AUTO_PULL_INTERVAL_V42);
+                return;
+            }
+
+            autoPullBusyV42 = true;
+            pollAndExecuteAutoV42(1);
+        } catch (Exception e) {
+            autoPullBusyV42 = false;
+            logMini("V42 Auto Pull error: " + e.getMessage());
+            scheduleAutoPullV42(AUTO_PULL_INTERVAL_V42);
+        }
+    }
+
+    void pollAndExecuteAutoV42(int limit) {
+        new Thread(() -> {
+            try {
+                JSONObject body = new JSONObject();
+                body.put("token", token());
+                body.put("limit", limit);
+                body.put("methods", selectedMethods());
+
+                String res = post("/api/queue/pull", body);
+                JSONObject j = new JSONObject(res);
+                JSONArray jobs = j.optJSONArray("jobs");
+
+                if (jobs == null || jobs.length() == 0) {
+                    return;
+                }
+
+                logMiniUi("V42 Auto Pull: تم سحب " + jobs.length() + " طلب.");
+
+                JSONArray webJobs = new JSONArray();
+
+                for (int i = 0; i < jobs.length(); i++) {
+                    JSONObject job = jobs.getJSONObject(i);
+                    String method = job.optString("delivery_method", "");
+
+                    if (method.equals("whatsapp_web")) {
+                        webJobs.put(job);
+                    } else {
+                        executeJob(job);
+                        sleep(900);
+                    }
+                }
+
+                if (webJobs.length() > 0) {
+                    waWebQueue = webJobs;
+                    waWebIndex = 0;
+                    waWebQueueRunning = true;
+                    runOnUiThread(() -> {
+                        focusWhatsAppWeb();
+                        runNextWhatsAppWebJob();
+                    });
+                }
+
+            } catch (Exception e) {
+                logMiniUi("فشل V42 Auto Pull: " + e.getMessage());
+            } finally {
+                autoPullBusyV42 = false;
+                scheduleAutoPullV42(AUTO_PULL_INTERVAL_V42);
+            }
+        }).start();
+    }
+
 
     void heartbeat() {
         saveSettings();
@@ -965,6 +1165,7 @@ void verifyWhatsAppWebChatReadyThenSend() {
                 body.put("methods", selectedMethods());
 
                 String res = post("/api/device/heartbeat", body);
+                saveInstitutionNameFromResponseV42(res);
                 logMiniUi("Heartbeat OK:\n" + res);
             } catch (Exception e) {
                 logMiniUi("Heartbeat FAILED: " + e.getMessage());
@@ -1075,8 +1276,16 @@ void verifyWhatsAppWebChatReadyThenSend() {
             }
 
             if (method.equals("call_apk")) {
+                // UNB_V42_CALL_APK_90_SECONDS_GUARD
+                long now = System.currentTimeMillis();
+                long waitMs = CALL_APK_GUARD_MS_V42 - (now - lastCallApkAtV42);
+                if (waitMs > 0) {
+                    logMiniUi("فاصل أمان الاتصال: انتظار " + (waitMs / 1000) + " ثانية قبل الاتصال التالي.");
+                    sleep(waitMs);
+                }
+                lastCallApkAtV42 = System.currentTimeMillis();
                 makeCall(phone);
-                ack(id, "sent", "call_started_by_native");
+                ack(id, "sent", "call_started_by_native_v42_90s_guard");
                 return;
             }
 
