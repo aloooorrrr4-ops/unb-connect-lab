@@ -109,7 +109,7 @@ public class MainActivity extends Activity {
         buildUi();
         setupEmbeddedWhatsAppWeb();
 
-        // UNB_WA_WEB_CONNECTED_SEARCH_SEND_V28
+        // UNB_WA_WEB_SINGLE_SCROLL_BOTTOM_V29
         // WhatsApp Web متصل بالشاشة الرئيسية ويتحدث عند فتح التطبيق.
         // الإرسال لا يستخدم رابط send، بل يبحث داخل نفس الصفحة ثم يرسل.
         currentWaWebPhone = "";
@@ -548,7 +548,7 @@ public class MainActivity extends Activity {
             waWebAttempts = 0;
             waWebOpenAttempts = 0;
 
-            // UNB_WA_WEB_CONNECTED_SEARCH_SEND_V28
+            // UNB_WA_WEB_SINGLE_SCROLL_BOTTOM_V29
             // لا نفتح رابط send?phone نهائيًا.
             // إذا نفس المحادثة مفتوحة: إرسال مباشر من صندوق الرسالة.
             // إذا الرقم تغيّر: نستخدم بحث WhatsApp Web داخل نفس الصفحة.
