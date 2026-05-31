@@ -1173,6 +1173,13 @@ public class MainActivity extends Activity {
         catch (Exception e) { return ""; }
     }
 
+
+    String shortToken(String t) {
+        if (t == null || t.length() == 0) return "(فارغ)";
+        if (t.length() <= 22) return t;
+        return t.substring(0, 14) + "..." + t.substring(t.length() - 10);
+    }
+
     String trimSlash(String u) {
         if (u == null || u.length() == 0) return "http://127.0.0.1:3108";
         while (u.endsWith("/")) u = u.substring(0, u.length() - 1);

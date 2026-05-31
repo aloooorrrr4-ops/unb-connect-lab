@@ -15,7 +15,7 @@ android {
         applicationId "com.unb.connect"
         minSdk 23
         targetSdk 35
-        versionCode 31
-        versionName "0.31.0-v28-green-single-scroll-bottom"
+        versionCode 32
+        versionName "0.32.0-fix-v31-shorttoken"
     }
 }
