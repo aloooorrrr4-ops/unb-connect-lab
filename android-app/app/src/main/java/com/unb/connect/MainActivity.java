@@ -637,7 +637,7 @@ public class MainActivity extends Activity {
             // لا نفتح رابط send?phone نهائيًا.
             // إذا نفس المحادثة مفتوحة: إرسال مباشر من صندوق الرسالة.
             // إذا الرقم تغيّر: نستخدم بحث WhatsApp Web داخل نفس الصفحة.
-            currentWaWebPhone = ""; logMini("V40: فتح رابط WhatsApp Web مباشر لكل طلب بدون اختصار المحادثة."); openChatBySearchThenSend();
+            currentWaWebPhone = ""; logMini("V41: فتح مباشر سريع لكل عميل بدون قالب بدون اختصار المحادثة."); openChatBySearchThenSend();
 
         } catch (Exception e) {
             setStatus("خطأ تجهيز WhatsApp Web: " + e.getMessage());
@@ -645,73 +645,54 @@ public class MainActivity extends Activity {
     }
 
     void openChatBySearchThenSend() {
-        // UNB_WA_WEB_DIRECT_TEMPLATE_V40
+        // UNB_WA_WEB_FAST_DIRECT_CUSTOMERS_V41
         if (waWebResultSent) return;
 
-        waWebOpenAttempts++;
-        waWebChatReadyAttempts = 0;
-
-        String phoneClean = waWebPhone == null ? "" : waWebPhone.replaceAll("[^0-9]", "");
-        if (phoneClean.length() == 0) {
-            waWebResultSent = true;
-            markWhatsAppWebResult("failed", "whatsapp_web_direct_template_empty_phone_v40");
-            return;
-        }
-
-        String msg = waWebMessage == null ? "" : waWebMessage;
-        String encodedMessage = "";
         try {
-            encodedMessage = java.net.URLEncoder.encode(msg, "UTF-8").replace("+", "%20");
+            waWebOpenAttempts++;
+            waWebChatReadyAttempts = 0;
+
+            String phoneClean = waWebPhone == null ? "" : waWebPhone.replaceAll("[^0-9]", "");
+            if (phoneClean.length() == 0) {
+                waWebResultSent = true;
+                markWhatsAppWebResult("failed", "whatsapp_web_fast_direct_empty_phone_v41");
+                return;
+            }
+
+            String msg = waWebMessage == null ? "" : waWebMessage;
+            String encodedMessage = java.net.URLEncoder.encode(msg, "UTF-8").replace("+", "%20");
+            String directUrl = "https://web.whatsapp.com/send?phone=" + phoneClean + "&text=" + encodedMessage + "&app_absent=0&unb_direct_ts=" + System.currentTimeMillis();
+
+            setStatus("V41 فتح مباشر للعميل بدون قالب...");
+            logMini("V41_FAST_DIRECT_CUSTOMER_URL: " + directUrl);
+
+            showWhatsAppWeb();
+            ensureWhatsAppWebLoaded();
+            focusWhatsAppWeb();
+
+            if (waWebView != null) {
+                try { waWebView.stopLoading(); } catch (Exception ignored) {}
+                waWebView.loadUrl(directUrl);
+            }
+
+            handler.postDelayed(() -> {
+                try { applyWhatsAppWebDesktopViewportV36(); } catch (Exception ignored) {}
+            }, 1600);
+
+            handler.postDelayed(() -> {
+                try {
+                    applyWhatsAppWebDesktopViewportV36();
+                    verifyWhatsAppWebChatReadyThenSend();
+                } catch (Exception e) {
+                    logMini("V41 fast direct verify error: " + e.getMessage());
+                    verifyWhatsAppWebChatReadyThenSend();
+                }
+            }, 3800);
+
         } catch (Exception e) {
-            encodedMessage = "";
+            waWebResultSent = true;
+            markWhatsAppWebResult("failed", "whatsapp_web_fast_direct_exception_v41_" + e.getClass().getSimpleName());
         }
-
-        String directUrl = "https://web.whatsapp.com/send?phone=" + phoneClean + "&text=" + encodedMessage + "&app_absent=0&unb_direct_ts=" + System.currentTimeMillis();
-
-        String safeUrl = directUrl.replace("&", "&amp;").replace("\"", "&quot;");
-        String safePhone = phoneClean.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
-        String safeMsg = msg.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
-        String jsUrl = directUrl.replace("\\", "\\\\").replace("'", "\\'");
-
-        String html =
-            "<!doctype html><html dir='rtl' lang='ar'><head>" +
-            "<meta charset='utf-8'>" +
-            "<meta name='viewport' content='width=device-width, initial-scale=1'>" +
-            "<style>" +
-            "body{font-family:sans-serif;background:#f3f4f6;margin:0;padding:18px;color:#111827;}" +
-            ".card{background:white;border-radius:18px;padding:18px;box-shadow:0 8px 28px rgba(0,0,0,.10);}" +
-            "h2{margin:0 0 14px;font-size:22px;}" +
-            "label{display:block;margin:12px 0 6px;font-weight:bold;color:#374151;}" +
-            "input,textarea{width:100%;box-sizing:border-box;border:1px solid #d1d5db;border-radius:12px;padding:12px;font-size:16px;direction:ltr;}" +
-            "textarea{height:120px;direction:rtl;}" +
-            ".btn{display:block;text-align:center;margin-top:16px;padding:14px;border-radius:14px;background:#059669;color:white;text-decoration:none;font-weight:bold;font-size:17px;}" +
-            ".mini{font-size:13px;color:#6b7280;margin-top:12px;direction:ltr;word-break:break-all;}" +
-            "</style></head><body>" +
-            "<div class='card'>" +
-            "<h2>قالب إرسال WhatsApp Web مباشر V40</h2>" +
-            "<label>الرقم</label>" +
-            "<input value='" + safePhone + "' readonly>" +
-            "<label>نص الرسالة</label>" +
-            "<textarea readonly>" + safeMsg + "</textarea>" +
-            "<a class='btn' href='" + safeUrl + "'>فتح الدردشة مباشرة</a>" +
-            "<div class='mini'>" + safeUrl + "</div>" +
-            "</div>" +
-            "<script>" +
-            "setTimeout(function(){ location.href='" + jsUrl + "'; }, 1200);" +
-            "</script>" +
-            "</body></html>";
-
-        setStatus("فتح قالب WhatsApp Web مباشر للرقم " + phoneClean + " ...");
-        logMini("WA_WEB_DIRECT_TEMPLATE_V37_" + waWebOpenAttempts + ": " + phoneClean);
-
-        if (waWebView != null) {
-            waWebView.loadDataWithBaseURL("https://web.whatsapp.com/", html, "text/html", "UTF-8", null);
-        }
-
-        handler.postDelayed(() -> {
-            applyWhatsAppWebDesktopViewportV36();
-            verifyWhatsAppWebChatReadyThenSend();
-        }, 12500);
     }
 
     
@@ -728,8 +709,8 @@ void applyWhatsAppWebDesktopViewportV36() {
         "   document.documentElement.style.minWidth='980px';\n" +
         "   document.body.style.minWidth='980px';\n" +
         "   document.documentElement.style.zoom='1';\n" +
-        "   return 'DESKTOP_VIEWPORT_APPLIED_V40';\n" +
-        " }catch(e){ return 'DESKTOP_VIEWPORT_ERROR_V36:' + e.message; }\n" +
+        "   return 'DESKTOP_VIEWPORT_APPLIED_V41';\n" +
+        " }catch(e){ return 'DESKTOP_VIEWPORT_ERROR_V41:' + e.message; }\n" +
         "})()";
 
     waWebView.evaluateJavascript(js, result -> {
@@ -738,7 +719,7 @@ void applyWhatsAppWebDesktopViewportV36() {
 }
 
 void verifyWhatsAppWebChatReadyThenSend() {
-    // UNB_WA_WEB_VERIFIED_COMPOSE_V40
+    // UNB_WA_WEB_VERIFIED_COMPOSE_V41
     if (waWebResultSent) return;
     waWebChatReadyAttempts++;
     setStatus("تأكيد فتح محادثة WhatsApp Web قبل الإرسال " + waWebChatReadyAttempts + " ...");
@@ -752,7 +733,7 @@ void verifyWhatsAppWebChatReadyThenSend() {
 
     waWebView.evaluateJavascript(js, result -> {
         String r = String.valueOf(result);
-        logMini("WA_WEB_CHAT_READY_V40_" + waWebChatReadyAttempts + ": " + r);
+        logMini("WA_WEB_CHAT_READY_V41_" + waWebChatReadyAttempts + ": " + r);
 
         if (r.contains("CHAT_COMPOSE_READY")) {
             currentWaWebPhone = waWebPhone;
@@ -768,7 +749,7 @@ void verifyWhatsAppWebChatReadyThenSend() {
 
         waWebResultSent = true;
         setStatus("فشل تأكيد فتح محادثة WhatsApp Web.");
-        markWhatsAppWebResult("failed", "whatsapp_web_chat_compose_not_ready_direct_template_v40");
+        markWhatsAppWebResult("failed", "whatsapp_web_chat_compose_not_ready_fast_direct_customers_v41");
         if (waWebQueueRunning) {
             handler.postDelayed(() -> runNextWhatsAppWebJob(), 900);
         }
@@ -814,21 +795,21 @@ void verifyWhatsAppWebChatReadyThenSend() {
                 "    key(box,'Enter');\n" +
                 "    window.UNB_DIRECT_SENT='NO_SEND_BUTTON';\n" +
                 "  },700);\n" +
-                "  return 'TEXT_INSERTED_CONNECTED_V40';\n" +
+                "  return 'TEXT_INSERTED_CONNECTED_V41';\n" +
                 "})(" + quoted + ")";
 
         waWebView.evaluateJavascript(js, value -> {
-            logMini("WA_WEB_SEND_V40_" + waWebAttempts + ": " + value);
+            logMini("WA_WEB_SEND_V41_" + waWebAttempts + ": " + value);
 
             handler.postDelayed(() -> {
                 waWebView.evaluateJavascript("(function(){return window.UNB_DIRECT_SENT || '';})()", result -> {
                     String r = String.valueOf(result);
-                    logMini("WA_WEB_SEND_RESULT_V40: " + r);
+                    logMini("WA_WEB_SEND_RESULT_V41: " + r);
 
                     if (r.contains("YES_BUTTON")) {
                         waWebResultSent = true;
                         setStatus("تم إرسال WhatsApp Web من نفس الصفحة.");
-                        markWhatsAppWebResult("sent", "whatsapp_web_sent_direct_template_v40");
+                        markWhatsAppWebResult("sent", "whatsapp_web_sent_fast_direct_customers_v41");
 
                         if (waWebQueueRunning) {
                             handler.postDelayed(() -> runNextWhatsAppWebJob(), 800);
@@ -843,7 +824,7 @@ void verifyWhatsAppWebChatReadyThenSend() {
 
                     waWebResultSent = true;
                     setStatus("فشل الإرسال من صندوق WhatsApp Web.");
-                    markWhatsAppWebResult("failed", "whatsapp_web_direct_send_failed_direct_template_v40");
+                    markWhatsAppWebResult("failed", "whatsapp_web_direct_send_failed_fast_direct_customers_v41");
 
                     if (waWebQueueRunning) {
                         handler.postDelayed(() -> runNextWhatsAppWebJob(), 900);
@@ -895,7 +876,7 @@ void verifyWhatsAppWebChatReadyThenSend() {
             if (v.contains("CLICKED_SEND")) {
                 waWebResultSent = true;
                 setStatus("تم إرسال WhatsApp Web.");
-                markWhatsAppWebResult("sent", "whatsapp_web_sent_direct_template_v40");
+                markWhatsAppWebResult("sent", "whatsapp_web_sent_fast_direct_customers_v41");
 
                 if (waWebQueueRunning) {
                     handler.postDelayed(() -> runNextWhatsAppWebJob(), 900);
@@ -908,7 +889,7 @@ void verifyWhatsAppWebChatReadyThenSend() {
             } else {
                 waWebResultSent = true;
                 setStatus("فشل العثور على زر إرسال WhatsApp Web.");
-                markWhatsAppWebResult("failed", "whatsapp_web_send_button_not_found_direct_template_v40");
+                markWhatsAppWebResult("failed", "whatsapp_web_send_button_not_found_fast_direct_customers_v41");
 
                 if (waWebQueueRunning) {
                     handler.postDelayed(() -> runNextWhatsAppWebJob(), 900);
