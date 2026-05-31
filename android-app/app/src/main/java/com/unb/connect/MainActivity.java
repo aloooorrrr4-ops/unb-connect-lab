@@ -109,7 +109,7 @@ public class MainActivity extends Activity {
         buildUi();
         setupEmbeddedWhatsAppWeb();
 
-        // UNB_WA_WEB_SINGLE_SCROLL_BOTTOM_V29
+        // UNB_WA_WEB_CONNECTED_SEARCH_SEND_V28
         // WhatsApp Web متصل بالشاشة الرئيسية ويتحدث عند فتح التطبيق.
         // الإرسال لا يستخدم رابط send، بل يبحث داخل نفس الصفحة ثم يرسل.
         currentWaWebPhone = "";
@@ -119,8 +119,8 @@ public class MainActivity extends Activity {
     }
 
     void buildUi() {
-        // UNB_WA_WEB_SINGLE_SCROLL_BOTTOM_V29
-        // صفحة واحدة فقط: كل الواجهة فوق، و WhatsApp Web في آخر الصفحة.
+        // UNB_WA_WEB_SINGLE_SCROLL_BOTTOM_SAFE_V31
+        // صفحة واحدة فقط: الرئيسية فوق، و WhatsApp Web في آخر الصفحة.
         controlsScroll = new ScrollView(this);
         controlsScroll.setFillViewport(false);
         controlsScroll.setBackgroundColor(Color.rgb(245, 247, 250));
@@ -186,7 +186,7 @@ public class MainActivity extends Activity {
         brand.setGravity(Gravity.CENTER);
         h.addView(brand);
 
-        statusView = tv("صفحة واحدة و WhatsApp Web في آخرها", 13, Typeface.BOLD, Color.rgb(187, 247, 208));
+        statusView = tv("وضع WhatsApp Web السهل داخل الصفحة", 13, Typeface.BOLD, Color.rgb(187, 247, 208));
         statusView.setGravity(Gravity.CENTER);
         h.addView(statusView);
 
@@ -548,7 +548,7 @@ public class MainActivity extends Activity {
             waWebAttempts = 0;
             waWebOpenAttempts = 0;
 
-            // UNB_WA_WEB_SINGLE_SCROLL_BOTTOM_V29
+            // UNB_WA_WEB_CONNECTED_SEARCH_SEND_V28
             // لا نفتح رابط send?phone نهائيًا.
             // إذا نفس المحادثة مفتوحة: إرسال مباشر من صندوق الرسالة.
             // إذا الرقم تغيّر: نستخدم بحث WhatsApp Web داخل نفس الصفحة.
@@ -657,7 +657,7 @@ public class MainActivity extends Activity {
 
                     waWebResultSent = true;
                     setStatus("لم يفتح البحث المحادثة داخل WhatsApp Web.");
-                    markWhatsAppWebResult("failed", "whatsapp_web_search_chat_not_found_single_scroll_v29");
+                    markWhatsAppWebResult("failed", "whatsapp_web_search_chat_not_found_single_scroll_v31");
 
                     if (waWebQueueRunning) {
                         handler.postDelayed(() -> runNextWhatsAppWebJob(), 900);
@@ -719,7 +719,7 @@ public class MainActivity extends Activity {
                     if (r.contains("YES_BUTTON") || r.contains("YES_ENTER")) {
                         waWebResultSent = true;
                         setStatus("تم إرسال WhatsApp Web من نفس الصفحة.");
-                        markWhatsAppWebResult("sent", "whatsapp_web_sent_by_single_scroll_bottom_v29");
+                        markWhatsAppWebResult("sent", "whatsapp_web_sent_by_single_scroll_bottom_v31");
 
                         if (waWebQueueRunning) {
                             handler.postDelayed(() -> runNextWhatsAppWebJob(), 800);
@@ -734,7 +734,7 @@ public class MainActivity extends Activity {
 
                     waWebResultSent = true;
                     setStatus("فشل الإرسال من صندوق WhatsApp Web.");
-                    markWhatsAppWebResult("failed", "whatsapp_web_direct_send_failed_single_scroll_v29");
+                    markWhatsAppWebResult("failed", "whatsapp_web_direct_send_failed_single_scroll_v31");
 
                     if (waWebQueueRunning) {
                         handler.postDelayed(() -> runNextWhatsAppWebJob(), 900);
@@ -786,7 +786,7 @@ public class MainActivity extends Activity {
             if (v.contains("CLICKED_SEND")) {
                 waWebResultSent = true;
                 setStatus("تم إرسال WhatsApp Web.");
-                markWhatsAppWebResult("sent", "whatsapp_web_sent_by_single_scroll_bottom_v29");
+                markWhatsAppWebResult("sent", "whatsapp_web_sent_by_single_scroll_bottom_v31");
 
                 if (waWebQueueRunning) {
                     handler.postDelayed(() -> runNextWhatsAppWebJob(), 900);
@@ -799,7 +799,7 @@ public class MainActivity extends Activity {
             } else {
                 waWebResultSent = true;
                 setStatus("فشل العثور على زر إرسال WhatsApp Web.");
-                markWhatsAppWebResult("failed", "whatsapp_web_send_button_not_found_single_scroll_bottom_v29");
+                markWhatsAppWebResult("failed", "whatsapp_web_send_button_not_found_single_scroll_bottom_v31");
 
                 if (waWebQueueRunning) {
                     handler.postDelayed(() -> runNextWhatsAppWebJob(), 900);
@@ -853,10 +853,10 @@ public class MainActivity extends Activity {
 
     void refreshLinkSummary() {
         String summary =
-                "call_apk\\nURL=" + baseUrl() + "\\nTOKEN=" + shortToken(token()) + "\\n\\n" +
-                "sms_apk\\nURL=" + baseUrl() + "\\nTOKEN=" + shortToken(token()) + "\\n\\n" +
-                "whatsapp_apk\\nURL=" + baseUrl() + "\\nTOKEN=" + shortToken(token()) + "\\n\\n" +
-                "whatsapp_web\\nURL=" + baseUrl() + "\\nTOKEN=" + shortToken(token());
+                "call_apk\nURL=" + baseUrl() + "\nTOKEN=" + shortToken(token()) + "\n\n" +
+                "sms_apk\nURL=" + baseUrl() + "\nTOKEN=" + shortToken(token()) + "\n\n" +
+                "whatsapp_apk\nURL=" + baseUrl() + "\nTOKEN=" + shortToken(token()) + "\n\n" +
+                "whatsapp_web\nURL=" + baseUrl() + "\nTOKEN=" + shortToken(token());
 
         if (linkSummaryView != null) linkSummaryView.setText(summary);
     }
