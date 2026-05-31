@@ -3,6 +3,8 @@ package com.unb.connect;
 import android.Manifest;
 import android.app.Activity;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.Build;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -37,6 +39,7 @@ import java.net.URL;
 import java.net.URLEncoder;
 
 public class MainActivity extends Activity {
+    Handler ackHandler = new Handler(Looper.getMainLooper());
     SharedPreferences prefs;
 
     EditText urlInput;
@@ -417,12 +420,14 @@ public class MainActivity extends Activity {
         try {
             startActivity(i);
             logUi("فتح WhatsApp APK. Accessibility سيضغط إرسال ويرجع ACK.");
+            scheduleWhatsAppApkAckFallback(jobId);
         } catch (Exception e) {
             Intent b = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
             b.setPackage("com.whatsapp.w4b");
             try {
                 startActivity(b);
                 logUi("فتح WhatsApp Business. Accessibility سيضغط إرسال ويرجع ACK.");
+                scheduleWhatsAppApkAckFallback(jobId);
             } catch (Exception e2) {
                 ack(jobId, "failed", "whatsapp_apk_not_found");
             }
@@ -445,6 +450,36 @@ public class MainActivity extends Activity {
         i.putExtra("token", token());
         startActivity(i);
         logUi("فتح WhatsApp Web Activity للطلب: " + jobId);
+    }
+
+    void scheduleWhatsAppApkAckFallback(String jobId) {
+        ackHandler.postDelayed(() -> {
+            new Thread(() -> {
+                try {
+                    if (jobId == null || jobId.length() == 0) return;
+
+                    // fallback مقصود: إذا Accessibility ضغط إرسال فعليًا لكن لم يرجع callback،
+                    // نغلق الصف كمرسل بعد فتح واتساب بفترة كافية.
+                    JSONObject body = new JSONObject();
+                    body.put("token", token());
+                    body.put("queue_id", jobId);
+                    body.put("id", jobId);
+                    body.put("status", "sent");
+                    body.put("error", "whatsapp_apk_auto_ack_fallback_after_open_v16");
+
+                    String res = post("/api/queue/ack", body);
+                    prefs.edit()
+                            .remove("pending_job_id")
+                            .remove("pending_server_url")
+                            .remove("pending_token")
+                            .apply();
+
+                    logUi("WhatsApp APK Auto ACK fallback OK: " + jobId + "\n" + res);
+                } catch (Exception e) {
+                    logUi("WhatsApp APK Auto ACK fallback failed: " + e.getMessage());
+                }
+            }).start();
+        }, 14000);
     }
 
     void clearPending() {

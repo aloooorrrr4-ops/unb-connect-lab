@@ -63,7 +63,7 @@ public class UnbAccessibilityService extends AccessibilityService {
         }
 
         if (clicked) {
-            handler.postDelayed(() -> postResultWithRetry(jobId, "sent", "whatsapp_apk_sent_by_accessibility_v15", 1), 1500);
+            handler.postDelayed(() -> postResultWithRetry(jobId, "sent", "whatsapp_apk_sent_by_accessibility_v16", 1), 1500);
             return;
         }
 
@@ -178,7 +178,7 @@ public class UnbAccessibilityService extends AccessibilityService {
 
             String deviceId = prefs.getString("device_id", prefs.getString("deviceId", ""));
 
-            URL url = new URL(serverUrl + "/api/queue/result");
+            URL url = new URL(serverUrl + "/api/queue/ack");
             HttpURLConnection c = (HttpURLConnection) url.openConnection();
             c.setRequestMethod("POST");
             c.setDoOutput(true);
