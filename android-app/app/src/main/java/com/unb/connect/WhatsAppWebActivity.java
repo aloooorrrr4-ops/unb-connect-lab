@@ -250,7 +250,7 @@ public class WhatsAppWebActivity extends Activity {
                 }
 
                 JSONObject body = new JSONObject();
-                body.put("job_id", jobId);
+                body.put("queue_id", jobId); body.put("id", jobId);
                 body.put("id", jobId);
                 body.put("device_id", deviceId);
                 body.put("token", token);

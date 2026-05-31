@@ -21,11 +21,8 @@ import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
-import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
-import android.widget.TableLayout;
-import android.widget.TableRow;
 import android.widget.TextView;
 
 import org.json.JSONArray;
@@ -33,27 +30,32 @@ import org.json.JSONObject;
 
 import java.io.BufferedReader;
 import java.io.OutputStream;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
-import java.util.ArrayList;
 
 public class MainActivity extends Activity {
     SharedPreferences prefs;
 
     EditText urlInput;
     EditText tokenInput;
+    TextView logView;
     TextView statusView;
 
     CheckBox fullLinkBox;
+    CheckBox callBox;
     CheckBox smsBox;
     CheckBox waApkBox;
-    CheckBox callBox;
     CheckBox waWebBox;
 
     final int DARK = Color.rgb(15, 23, 42);
-    final int CARD_BORDER = Color.rgb(216, 222, 233);
+    final int GREEN = Color.rgb(13, 148, 136);
+    final int BLUE = Color.rgb(37, 99, 235);
+    final int RED = Color.rgb(185, 28, 28);
+    final int GRAY = Color.rgb(55, 65, 81);
+    final int ORANGE = Color.rgb(180, 83, 9);
 
     @Override
     protected void onCreate(Bundle b) {
@@ -71,12 +73,6 @@ public class MainActivity extends Activity {
         buildUi();
     }
 
-    @Override
-    protected void onResume() {
-        super.onResume();
-        if (prefs != null) buildUi();
-    }
-
     void buildUi() {
         ScrollView scroll = new ScrollView(this);
         LinearLayout page = new LinearLayout(this);
@@ -86,20 +82,11 @@ public class MainActivity extends Activity {
         scroll.addView(page);
 
         page.addView(header());
-
-        if (!isAccessibilityEnabled()) {
-            page.addView(permissionGate());
-            page.addView(footer());
-            setContentView(scroll);
-            return;
-        }
-
         page.addView(systemLinkCard());
-        page.addView(actionsCard());
-        page.addView(methodsTableCard());
-        page.addView(whatsappWebSessionCard());
+        page.addView(methodsCard());
+        page.addView(nativeActionsCard());
+        page.addView(whatsappCard());
         page.addView(logCard());
-        page.addView(footer());
 
         setContentView(scroll);
     }
@@ -108,272 +95,423 @@ public class MainActivity extends Activity {
         LinearLayout h = new LinearLayout(this);
         h.setOrientation(LinearLayout.VERTICAL);
         h.setGravity(Gravity.CENTER);
-        h.setPadding(dp(12), dp(18), dp(12), dp(18));
+        h.setPadding(dp(14), dp(18), dp(14), dp(18));
         h.setBackgroundColor(DARK);
 
-        TextView brand = tv("هيدرا", 30, Typeface.BOLD, Color.WHITE);
+        TextView brand = tv("UNB Connect APK Hydra", 22, Typeface.BOLD, Color.WHITE);
         brand.setGravity(Gravity.CENTER);
         h.addView(brand);
 
-        TextView sub = tv("النظام العالمي هيدرا قوة | UNB Connect APK", 14, Typeface.NORMAL, Color.rgb(209, 213, 219));
+        TextView sub = tv("تنفيذ طابور النظام عبر التطبيق: اتصال، SMS، WhatsApp APK، WhatsApp Web", 13, Typeface.NORMAL, Color.rgb(209, 213, 219));
         sub.setGravity(Gravity.CENTER);
         h.addView(sub);
 
-        TextView mode = tv("الوضع الحالي: التحكم من Termux", 13, Typeface.BOLD, Color.rgb(187, 247, 208));
-        mode.setGravity(Gravity.CENTER);
-        h.addView(mode);
+        statusView = tv("الوضع: Native Device Executor V1", 13, Typeface.BOLD, Color.rgb(187, 247, 208));
+        statusView.setGravity(Gravity.CENTER);
+        h.addView(statusView);
 
         return h;
-    }
-
-    View permissionGate() {
-        LinearLayout c = card();
-        c.setBackgroundColor(Color.rgb(255, 247, 237));
-
-        TextView title = tv("مطلوب تفعيل إذن الوصول", 21, Typeface.BOLD, Color.rgb(17, 24, 39));
-        title.setGravity(Gravity.RIGHT);
-        c.addView(title);
-
-        TextView note = tv("بدون Accessibility لا تظهر إعدادات الربط ولا يعمل واتساب APK.", 16, Typeface.NORMAL, Color.rgb(55, 65, 81));
-        note.setGravity(Gravity.RIGHT);
-        c.addView(note);
-
-        TextView badge = badge("غير مفعل", false);
-        c.addView(badge);
-
-        c.addView(btn("فتح إعدادات Accessibility", Color.rgb(22, 163, 74), v -> {
-            startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
-        }));
-
-        c.addView(btn("تحديث الحالة", Color.rgb(31, 41, 55), v -> buildUi()));
-
-        c.addView(btn("إغلاق", Color.rgb(220, 38, 38), v -> finish()));
-
-        return c;
     }
 
     View systemLinkCard() {
         LinearLayout c = card();
 
-        TextView title = tv("ربط النظام كامل", 20, Typeface.BOLD, Color.rgb(17, 24, 39));
-        c.addView(title);
-
-        TextView note = tv("حاليًا الربط من Termux. لاحقًا نستبدله برابط النظام الحقيقي.", 15, Typeface.NORMAL, Color.rgb(55, 65, 81));
-        c.addView(note);
+        c.addView(title("1) ربط النظام / Termux المؤقت"));
+        c.addView(note("حاليًا نستخدم http://127.0.0.1:3108 مؤقتًا. لاحقًا نفس التطبيق يقرأ من نظام UNB ERP الحقيقي بنفس Web Token."));
 
         fullLinkBox = new CheckBox(this);
-        fullLinkBox.setText("تفعيل الربط الكامل مع Termux");
+        fullLinkBox.setText("تفعيل الربط الكامل");
         fullLinkBox.setTextSize(16);
         fullLinkBox.setTypeface(Typeface.DEFAULT_BOLD);
-        fullLinkBox.setChecked(prefs.getBoolean("full_link_enabled", false));
-        fullLinkBox.setOnCheckedChangeListener((b, on) -> {
-            prefs.edit().putBoolean("full_link_enabled", on).apply();
-            applyFullLinkState(on);
-        });
+        fullLinkBox.setChecked(prefs.getBoolean("full_link_enabled", true));
+        fullLinkBox.setOnCheckedChangeListener((b, on) -> prefs.edit().putBoolean("full_link_enabled", on).apply());
         c.addView(fullLinkBox);
 
-        c.addView(label("رابط Termux الحالي"));
-        urlInput = new EditText(this);
-        urlInput.setSingleLine(true);
-        urlInput.setText(prefs.getString("server_url", "http://127.0.0.1:3108"));
-        urlInput.setTextDirection(View.TEXT_DIRECTION_LTR);
+        c.addView(label("System URL"));
+        urlInput = input(prefs.getString("server_url", "http://127.0.0.1:3108"));
         c.addView(urlInput);
 
-        c.addView(label("Device Token"));
-        tokenInput = new EditText(this);
-        tokenInput.setSingleLine(true);
-        tokenInput.setText(prefs.getString("token", ""));
-        tokenInput.setTextDirection(View.TEXT_DIRECTION_LTR);
+        c.addView(label("Web Token"));
+        tokenInput = input(prefs.getString("token", ""));
         c.addView(tokenInput);
 
-        c.addView(btn("حفظ الرابط والتوكن", Color.rgb(31, 41, 55), v -> saveSettings()));
-
-        c.addView(btn("ربط الجهاز مع Termux", Color.rgb(22, 163, 74), v -> {
-            saveSettings();
-            pairDevice();
-        }));
+        c.addView(btn("حفظ الرابط والتوكن", GRAY, v -> saveSettings()));
+        c.addView(btn("تحميل التوكن من Termux", BLUE, v -> loadTokenFromServer()));
+        c.addView(btn("فحص الاتصال / Heartbeat", GREEN, v -> heartbeat()));
 
         return c;
     }
 
-    View actionsCard() {
+    View methodsCard() {
         LinearLayout c = card();
+        c.addView(title("2) طرق الجهاز المنفذة من التطبيق"));
 
-        TextView title = tv("أوامر التشغيل", 20, Typeface.BOLD, Color.rgb(17, 24, 39));
-        c.addView(title);
+        callBox = check("call_apk - اتصال من الجوال", prefs.getBoolean("m_call_apk", true));
+        smsBox = check("sms_apk - SMS من الجوال", prefs.getBoolean("m_sms_apk", true));
+        waApkBox = check("whatsapp_apk - واتساب APK", prefs.getBoolean("m_whatsapp_apk", true));
+        waWebBox = check("whatsapp_web - واتساب Web داخل التطبيق", prefs.getBoolean("m_whatsapp_web", true));
 
-        c.addView(btn("سحب وتنفيذ طلب واحد", Color.rgb(37, 99, 235), v -> {
-            saveSettings();
-            pollOne();
-        }));
+        c.addView(callBox);
+        c.addView(smsBox);
+        c.addView(waApkBox);
+        c.addView(waWebBox);
 
-        c.addView(btn("تنظيف طلب واتساب المعلق", Color.rgb(107, 114, 128), v -> {
-            prefs.edit()
-                    .remove("pending_job_id")
-                    .remove("pending_server_url")
-                    .remove("pending_token")
-                    .apply();
-            log("تم تنظيف طلب واتساب المعلق");
-        }));
+        c.addView(btn("حفظ الطرق", GRAY, v -> saveSettings()));
+        return c;
+    }
 
-        c.addView(btn("نسخ حالة الربط", Color.rgb(161, 98, 7), v -> copyText(buildTableText())));
+    View nativeActionsCard() {
+        LinearLayout c = card();
+        c.addView(title("3) تنفيذ الطابور الحقيقي من التطبيق"));
+
+        c.addView(btn("سحب وتنفيذ طلب واحد", BLUE, v -> pollAndExecute(1)));
+        c.addView(btn("سحب وتنفيذ كل الطلبات المتاحة", ORANGE, v -> pollAndExecute(20)));
+        c.addView(btn("إضافة طابور اختبار مؤقت", GRAY, v -> enqueueTemp()));
+        c.addView(btn("عرض حالة الطابور", GREEN, v -> listQueue()));
+        c.addView(btn("تنظيف طلب واتساب المعلق", RED, v -> clearPending()));
+        c.addView(btn("نسخ حالة الربط", ORANGE, v -> copyText(buildStatusText())));
 
         return c;
     }
 
-    View methodsTableCard() {
+    View whatsappCard() {
         LinearLayout c = card();
+        c.addView(title("4) WhatsApp"));
+        c.addView(note("WhatsApp APK يحتاج Accessibility حتى يضغط إرسال. WhatsApp Web يفتح WebView داخل التطبيق ويعرض QR عند الحاجة."));
 
-        TextView title = tv("جدول الربط الأفقي - مثل Excel", 20, Typeface.BOLD, Color.rgb(17, 24, 39));
-        c.addView(title);
-
-        TextView note = tv("كل صف يمثل طريقة إرسال مستقلة. الرابط والتوكن هنا خاصان بربط التطبيق مع Termux فقط.", 14, Typeface.NORMAL, Color.rgb(55, 65, 81));
-        c.addView(note);
-
-        HorizontalScrollView hsv = new HorizontalScrollView(this);
-        TableLayout table = new TableLayout(this);
-        table.setStretchAllColumns(false);
-
-        TableRow head = new TableRow(this);
-        head.addView(th("القسم"));
-        head.addView(th("مفعل"));
-        head.addView(th("رابط النظام/Termux"));
-        head.addView(th("توكن النظام"));
-        head.addView(th("حالة النظام"));
-        head.addView(th("حالة التطبيق"));
-        head.addView(th("إجراء"));
-        table.addView(head);
-
-        smsBox = row(table, "SMS APK", "sms_apk", "جاهز", "لا يحتاج QR", "اختبار SMS");
-        waApkBox = row(table, "WhatsApp APK", "whatsapp_apk", "جاهز", "Accessibility مفعل", "اختبار واتساب");
-        callBox = row(table, "Call APK", "call_apk", "جاهز", "إذن الاتصال", "اختبار اتصال");
-        waWebBox = row(table, "WhatsApp Web", "whatsapp_web", "جاهز من Termux", "جلسة واتساب تحتاج QR", "فتح QR");
-
-        hsv.addView(table);
-        c.addView(hsv);
-
-        c.addView(btn("نسخ الجدول كامل", Color.rgb(31, 41, 55), v -> copyText(buildTableText())));
-
-        applyFullLinkState(prefs.getBoolean("full_link_enabled", false));
-
-        return c;
-    }
-
-    CheckBox row(TableLayout table, String name, String method, String systemStatus, String appStatus, String actionText) {
-        TableRow r = new TableRow(this);
-
-        r.addView(td(name, true));
-
-        CheckBox cb = new CheckBox(this);
-        cb.setChecked(prefs.getBoolean(method + "_enabled", true));
-        cb.setOnCheckedChangeListener((b, on) -> prefs.edit().putBoolean(method + "_enabled", on).apply());
-        r.addView(cb);
-
-        r.addView(td(base() + "/api/" + method, false));
-        r.addView(td(token().length() == 0 ? "بدون توكن حاليًا" : token(), false));
-        r.addView(td(systemStatus, false));
-        r.addView(td(appStatus, false));
-
-        Button act = new Button(this);
-        act.setText(actionText);
-        act.setAllCaps(false);
-        act.setOnClickListener(v -> {
-            if ("whatsapp_web".equals(method)) {
-                openWhatsAppWebQr();
-            } else {
-                createTestJob(method);
-            }
-        });
-        r.addView(act);
-
-        table.addView(r);
-        return cb;
-    }
-
-    View whatsappWebSessionCard() {
-        LinearLayout c = card();
-
-        TextView title = tv("جلسة WhatsApp Web داخل التطبيق", 20, Typeface.BOLD, Color.rgb(17, 24, 39));
-        c.addView(title);
-
-        TextView note = tv("هذا القسم لا يحتاج رابط ولا توكن. الرابط والتوكن للنظام فقط. هنا نربط التطبيق نفسه مع واتساب ويب عبر QR.", 15, Typeface.NORMAL, Color.rgb(55, 65, 81));
-        c.addView(note);
-
-        c.addView(badge("واتساب ويب: يحتاج QR أو جلسة محفوظة", false));
-
-        c.addView(btn("فتح WhatsApp Web / إظهار QR", Color.rgb(22, 163, 74), v -> openWhatsAppWebQr()));
-
-        c.addView(btn("سحب طلب WhatsApp Web من Termux", Color.rgb(37, 99, 235), v -> {
-            saveSettings();
-            createTestJob("whatsapp_web");
-        }));
+        c.addView(btn("فتح إعدادات Accessibility", ORANGE, v -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))));
+        c.addView(btn("فتح WhatsApp Web / QR", GREEN, v -> openWhatsAppWebQr()));
 
         return c;
     }
 
     View logCard() {
         LinearLayout c = card();
-        TextView title = tv("الحالة", 18, Typeface.BOLD, Color.rgb(17, 24, 39));
-        c.addView(title);
-
-        statusView = tv("جاهز", 14, Typeface.NORMAL, Color.rgb(55, 65, 81));
-        statusView.setGravity(Gravity.RIGHT);
-        c.addView(statusView);
+        c.addView(title("السجل"));
+        logView = tv("جاهز...", 13, Typeface.NORMAL, Color.rgb(229, 231, 235));
+        logView.setTextDirection(View.TEXT_DIRECTION_LTR);
+        logView.setGravity(Gravity.LEFT);
+        logView.setPadding(dp(10), dp(10), dp(10), dp(10));
+        logView.setBackgroundColor(Color.rgb(7, 16, 31));
+        c.addView(logView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(260)));
         return c;
     }
 
-    View footer() {
-        TextView f = tv("HYDRA POWER · UNB CONNECT · TERMUX MODE", 13, Typeface.BOLD, Color.rgb(107, 114, 128));
-        f.setGravity(Gravity.CENTER);
-        f.setPadding(0, dp(14), 0, dp(14));
-        return f;
-    }
-
-    void applyFullLinkState(boolean on) {
-        if (smsBox != null) {
-            smsBox.setChecked(on || prefs.getBoolean("sms_apk_enabled", true));
-            waApkBox.setChecked(on || prefs.getBoolean("whatsapp_apk_enabled", true));
-            callBox.setChecked(on || prefs.getBoolean("call_apk_enabled", true));
-            waWebBox.setChecked(on || prefs.getBoolean("whatsapp_web_enabled", true));
-
-            smsBox.setEnabled(!on);
-            waApkBox.setEnabled(!on);
-            callBox.setEnabled(!on);
-            waWebBox.setEnabled(!on);
-        }
-
-        if (on) {
-            prefs.edit()
-                    .putBoolean("sms_apk_enabled", true)
-                    .putBoolean("whatsapp_apk_enabled", true)
-                    .putBoolean("call_apk_enabled", true)
-                    .putBoolean("whatsapp_web_enabled", true)
-                    .apply();
-            log("الربط الكامل مع Termux مفعل");
-        }
-    }
-
     void saveSettings() {
-        String u = urlInput == null ? "http://127.0.0.1:3108" : urlInput.getText().toString().trim();
+        String u = urlInput == null ? "" : urlInput.getText().toString().trim();
         String t = tokenInput == null ? "" : tokenInput.getText().toString().trim();
 
         if (u.length() == 0) u = "http://127.0.0.1:3108";
-        while (u.endsWith("/")) u = u.substring(0, u.length() - 1);
 
         prefs.edit()
-                .putString("server_url", u)
-                .putString("base_url", u)
+                .putString("server_url", trimSlash(u))
+                .putString("base_url", trimSlash(u))
                 .putString("token", t)
                 .putString("device_token", t)
+                .putBoolean("full_link_enabled", fullLinkBox == null || fullLinkBox.isChecked())
+                .putBoolean("m_call_apk", callBox == null || callBox.isChecked())
+                .putBoolean("m_sms_apk", smsBox == null || smsBox.isChecked())
+                .putBoolean("m_whatsapp_apk", waApkBox == null || waApkBox.isChecked())
+                .putBoolean("m_whatsapp_web", waWebBox == null || waWebBox.isChecked())
                 .apply();
 
-        log("تم حفظ رابط Termux والتوكن");
+        log("تم حفظ الرابط والتوكن والطرق.");
     }
 
-    String base() {
+    void loadTokenFromServer() {
+        saveSettings();
+        new Thread(() -> {
+            try {
+                JSONObject j = new JSONObject(get("/api/config"));
+                String u = j.optString("system_url", baseUrl());
+                String t = j.optString("web_token", token());
+
+                prefs.edit()
+                        .putString("server_url", trimSlash(u))
+                        .putString("base_url", trimSlash(u))
+                        .putString("token", t)
+                        .putString("device_token", t)
+                        .apply();
+
+                runOnUiThread(() -> {
+                    urlInput.setText(trimSlash(u));
+                    tokenInput.setText(t);
+                    log("تم تحميل التوكن:\n" + j.toString());
+                });
+            } catch (Exception e) {
+                logUi("فشل تحميل التوكن: " + e.getMessage());
+            }
+        }).start();
+    }
+
+    void heartbeat() {
+        saveSettings();
+        new Thread(() -> {
+            try {
+                JSONObject body = new JSONObject();
+                body.put("token", token());
+                body.put("device_id", deviceId());
+                body.put("full_link_enabled", true);
+                body.put("methods", selectedMethods());
+
+                String res = post("/api/device/heartbeat", body);
+                logUi("Heartbeat OK:\n" + res);
+            } catch (Exception e) {
+                logUi("Heartbeat FAILED: " + e.getMessage());
+            }
+        }).start();
+    }
+
+    void enqueueTemp() {
+        saveSettings();
+        new Thread(() -> {
+            try {
+                JSONObject body = new JSONObject();
+                body.put("token", token());
+                body.put("phone", "967700000000");
+                body.put("message", "اختبار Native من التطبيق");
+                body.put("recipient_type", "customer");
+                body.put("methods", selectedMethods());
+
+                String res = post("/api/queue/enqueue", body);
+                logUi("تمت إضافة طابور اختبار:\n" + res);
+            } catch (Exception e) {
+                logUi("فشل إضافة الطابور: " + e.getMessage());
+            }
+        }).start();
+    }
+
+    void listQueue() {
+        saveSettings();
+        new Thread(() -> {
+            try {
+                String res = get("/api/queue/list?token=" + enc(token()));
+                logUi("Queue:\n" + res);
+            } catch (Exception e) {
+                logUi("فشل عرض الطابور: " + e.getMessage());
+            }
+        }).start();
+    }
+
+    void pollAndExecute(int limit) {
+        saveSettings();
+        if (!prefs.getBoolean("full_link_enabled", true)) {
+            log("الربط الكامل غير مفعل.");
+            return;
+        }
+
+        new Thread(() -> {
+            try {
+                JSONObject body = new JSONObject();
+                body.put("token", token());
+                body.put("limit", limit);
+                body.put("methods", selectedMethods());
+
+                String res = post("/api/queue/pull", body);
+                JSONObject j = new JSONObject(res);
+                JSONArray jobs = j.optJSONArray("jobs");
+
+                if (jobs == null || jobs.length() == 0) {
+                    logUi("لا توجد طلبات pending.\n" + res);
+                    return;
+                }
+
+                logUi("تم سحب " + jobs.length() + " طلب. يبدأ التنفيذ...");
+
+                for (int i = 0; i < jobs.length(); i++) {
+                    JSONObject job = jobs.getJSONObject(i);
+                    executeJob(job);
+                    sleep(900);
+                }
+            } catch (Exception e) {
+                logUi("فشل السحب/التنفيذ: " + e.getMessage());
+            }
+        }).start();
+    }
+
+    void executeJob(JSONObject job) {
+        try {
+            String id = job.optString("id", job.optString("queue_id", ""));
+            String method = job.optString("delivery_method", "");
+            String phone = cleanPhone(job.optString("phone", ""));
+            String message = job.optString("body", job.optString("message", ""));
+
+            logUi("تنفيذ: " + method + " / " + phone + " / " + id);
+
+            if (method.equals("sms_apk")) {
+                sendSms(phone, message);
+                ack(id, "sent", "sms_sent_by_native");
+                return;
+            }
+
+            if (method.equals("call_apk")) {
+                makeCall(phone);
+                ack(id, "sent", "call_started_by_native");
+                return;
+            }
+
+            if (method.equals("whatsapp_apk")) {
+                openWhatsAppApk(id, phone, message);
+                return;
+            }
+
+            if (method.equals("whatsapp_web")) {
+                openWhatsAppWebJob(id, phone, message);
+                return;
+            }
+
+            ack(id, "failed", "unsupported_method_" + method);
+        } catch (Exception e) {
+            logUi("خطأ تنفيذ الطلب: " + e.getMessage());
+        }
+    }
+
+    void ack(String id, String status, String error) {
+        try {
+            if (id == null || id.length() == 0) return;
+
+            JSONObject body = new JSONObject();
+            body.put("token", token());
+            body.put("queue_id", id);
+            body.put("id", id);
+            body.put("status", status);
+            body.put("error", error == null ? "" : error);
+
+            String res = post("/api/queue/ack", body);
+            logUi("ACK " + id + " => " + status + "\n" + res);
+        } catch (Exception e) {
+            logUi("فشل ACK: " + e.getMessage());
+        }
+    }
+
+    void sendSms(String phone, String message) throws Exception {
+        if (Build.VERSION.SDK_INT >= 23 && checkSelfPermission(Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.SEND_SMS}, 21);
+            throw new Exception("SEND_SMS_PERMISSION_REQUIRED");
+        }
+        SmsManager.getDefault().sendTextMessage(phone, null, message, null, null);
+    }
+
+    void makeCall(String phone) throws Exception {
+        Intent i;
+        if (Build.VERSION.SDK_INT >= 23 && checkSelfPermission(Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
+            i = new Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + phone));
+        } else {
+            i = new Intent(Intent.ACTION_CALL, Uri.parse("tel:" + phone));
+        }
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        startActivity(i);
+    }
+
+    void openWhatsAppApk(String jobId, String phone, String message) throws Exception {
+        prefs.edit()
+                .putString("pending_job_id", jobId)
+                .putString("pending_server_url", baseUrl())
+                .putString("pending_token", token())
+                .apply();
+
+        String url = "https://wa.me/" + phone + "?text=" + enc(message);
+        Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+        i.setPackage("com.whatsapp");
+
+        try {
+            startActivity(i);
+            logUi("فتح WhatsApp APK. Accessibility سيضغط إرسال ويرجع ACK.");
+        } catch (Exception e) {
+            Intent b = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+            b.setPackage("com.whatsapp.w4b");
+            try {
+                startActivity(b);
+                logUi("فتح WhatsApp Business. Accessibility سيضغط إرسال ويرجع ACK.");
+            } catch (Exception e2) {
+                ack(jobId, "failed", "whatsapp_apk_not_found");
+            }
+        }
+    }
+
+    void openWhatsAppWebQr() {
+        Intent i = new Intent(this, WhatsAppWebActivity.class);
+        i.putExtra("server_url", baseUrl());
+        i.putExtra("token", token());
+        startActivity(i);
+    }
+
+    void openWhatsAppWebJob(String jobId, String phone, String message) {
+        Intent i = new Intent(this, WhatsAppWebActivity.class);
+        i.putExtra("job_id", jobId);
+        i.putExtra("phone", phone);
+        i.putExtra("message", message);
+        i.putExtra("server_url", baseUrl());
+        i.putExtra("token", token());
+        startActivity(i);
+        logUi("فتح WhatsApp Web Activity للطلب: " + jobId);
+    }
+
+    void clearPending() {
+        prefs.edit()
+                .remove("pending_job_id")
+                .remove("pending_server_url")
+                .remove("pending_token")
+                .apply();
+        log("تم تنظيف طلب واتساب المعلق.");
+    }
+
+    JSONArray selectedMethods() {
+        JSONArray a = new JSONArray();
+        try {
+            if (callBox == null || callBox.isChecked()) a.put("call_apk");
+            if (smsBox == null || smsBox.isChecked()) a.put("sms_apk");
+            if (waApkBox == null || waApkBox.isChecked()) a.put("whatsapp_apk");
+            if (waWebBox == null || waWebBox.isChecked()) a.put("whatsapp_web");
+        } catch (Exception ignored) {}
+        return a;
+    }
+
+    String get(String path) throws Exception {
+        URL url = new URL(baseUrl() + path);
+        HttpURLConnection c = (HttpURLConnection) url.openConnection();
+        c.setConnectTimeout(8000);
+        c.setReadTimeout(12000);
+        c.setRequestMethod("GET");
+        c.setRequestProperty("X-Web-Token", token());
+        return readResponse(c);
+    }
+
+    String post(String path, JSONObject body) throws Exception {
+        URL url = new URL(baseUrl() + path);
+        HttpURLConnection c = (HttpURLConnection) url.openConnection();
+        c.setConnectTimeout(8000);
+        c.setReadTimeout(15000);
+        c.setRequestMethod("POST");
+        c.setDoOutput(true);
+        c.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+        c.setRequestProperty("X-Web-Token", token());
+
+        byte[] bytes = body.toString().getBytes("UTF-8");
+        OutputStream os = c.getOutputStream();
+        os.write(bytes);
+        os.close();
+
+        return readResponse(c);
+    }
+
+    String readResponse(HttpURLConnection c) throws Exception {
+        int code = c.getResponseCode();
+        InputStream is = code >= 200 && code < 400 ? c.getInputStream() : c.getErrorStream();
+        BufferedReader br = new BufferedReader(new InputStreamReader(is, "UTF-8"));
+        StringBuilder sb = new StringBuilder();
+        String line;
+        while ((line = br.readLine()) != null) sb.append(line).append("\n");
+        br.close();
+
+        String res = sb.toString().trim();
+        if (code < 200 || code >= 400) throw new Exception("HTTP_" + code + ": " + res);
+        return res;
+    }
+
+    String baseUrl() {
         String u = prefs.getString("server_url", "http://127.0.0.1:3108");
-        while (u.endsWith("/")) u = u.substring(0, u.length() - 1);
-        return u;
+        return trimSlash(u);
     }
 
     String token() {
@@ -381,412 +519,127 @@ public class MainActivity extends Activity {
     }
 
     String deviceId() {
-        return prefs.getString("device_id", "");
+        return prefs.getString("device_id", "hydra_android_" + System.currentTimeMillis());
     }
 
     void ensureDevice() {
-        String id = prefs.getString("device_id", "");
-        if (id.length() == 0) {
-            id = "HYDRA_" + System.currentTimeMillis();
-            prefs.edit()
-                    .putString("device_id", id)
-                    .putString("deviceId", id)
-                    .apply();
+        if (prefs.getString("device_id", "").length() == 0) {
+            prefs.edit().putString("device_id", "hydra_android_" + System.currentTimeMillis()).apply();
         }
     }
 
-    boolean isMethodEnabled(String method) {
-        if (prefs.getBoolean("full_link_enabled", false)) return true;
-        return prefs.getBoolean(method + "_enabled", true);
+    String cleanPhone(String v) {
+        if (v == null) return "";
+        return v.replaceAll("[^0-9]", "");
     }
 
-    void pairDevice() {
-        new Thread(() -> {
-            try {
-                JSONObject body = new JSONObject();
-                body.put("device_id", deviceId());
-                body.put("name", "HYDRA UNB Connect APK");
-                body.put("source", "termux");
-
-                String res = httpPost(base() + "/api/device/pair", body.toString());
-                runOnUiThread(() -> log("ربط Termux: " + res));
-            } catch (Exception e) {
-                runOnUiThread(() -> log("فشل الربط: " + e.getMessage()));
-            }
-        }).start();
+    String enc(String s) {
+        try { return URLEncoder.encode(s == null ? "" : s, "UTF-8"); }
+        catch (Exception e) { return ""; }
     }
 
-    void pollOne() {
-        new Thread(() -> {
-            try {
-                JSONObject job = null;
-
-                try {
-                    String res = httpGet(base() + "/api/queue/poll?device_id=" + enc(deviceId()));
-                    job = parseJob(res);
-                } catch (Exception ignored) {}
-
-                if (job == null) {
-                    JSONObject body = new JSONObject();
-                    body.put("device_id", deviceId());
-                    String res = httpPost(base() + "/api/queue/poll", body.toString());
-                    job = parseJob(res);
-                }
-
-                if (job == null) {
-                    runOnUiThread(() -> log("لا يوجد طلب في الطابور"));
-                    return;
-                }
-
-                JSONObject finalJob = job;
-                runOnUiThread(() -> processJob(finalJob));
-
-            } catch (Exception e) {
-                runOnUiThread(() -> log("فشل السحب: " + e.getMessage()));
-            }
-        }).start();
+    String trimSlash(String u) {
+        if (u == null || u.length() == 0) return "http://127.0.0.1:3108";
+        while (u.endsWith("/")) u = u.substring(0, u.length() - 1);
+        return u;
     }
 
-    JSONObject parseJob(String res) throws Exception {
-        JSONObject o = new JSONObject(res);
-
-        if (o.has("job") && !o.isNull("job")) {
-            Object j = o.get("job");
-            if (j instanceof JSONObject) return (JSONObject) j;
-        }
-
-        if (o.has("jobs")) {
-            JSONArray arr = o.optJSONArray("jobs");
-            if (arr != null && arr.length() > 0) return arr.getJSONObject(0);
-        }
-
-        if (o.has("id") && o.has("method")) return o;
-
-        return null;
+    String buildStatusText() {
+        return "UNB Connect Native Executor\n" +
+                "URL=" + baseUrl() + "\n" +
+                "TOKEN=" + token() + "\n" +
+                "FULL_LINK=" + prefs.getBoolean("full_link_enabled", true) + "\n" +
+                "METHODS=" + selectedMethods().toString() + "\n";
     }
 
-    void processJob(JSONObject job) {
-        try {
-            String id = job.optString("id", job.optString("job_id", ""));
-            String method = job.optString("method", "");
-            String phone = job.optString("phone", "");
-            String message = job.optString("message", "");
-
-            if (id.length() == 0 || method.length() == 0) {
-                log("طلب غير صالح");
-                return;
-            }
-
-            if (!isMethodEnabled(method)) {
-                markResult(id, "failed", "method_disabled_in_hydra_ui");
-                return;
-            }
-
-            log("تنفيذ: " + method + " / " + phone);
-
-            if ("whatsapp_apk".equals(method)) {
-                prefs.edit()
-                        .putString("pending_job_id", id)
-                        .putString("pending_server_url", base())
-                        .putString("pending_token", token())
-                        .apply();
-
-                openWhatsApp(phone, message);
-                log("تم فتح WhatsApp APK وينتظر Accessibility");
-                return;
-            }
-
-            if ("sms_apk".equals(method)) {
-                sendSms(phone, message);
-                markResult(id, "sent", "sms_sent_by_android_app");
-                return;
-            }
-
-            if ("call_apk".equals(method)) {
-                openCall(phone);
-                markResult(id, "sent", "call_opened_by_android_app");
-                return;
-            }
-
-            if ("whatsapp_web".equals(method)) {
-                Intent webIntent = new Intent(this, WhatsAppWebActivity.class);
-                webIntent.putExtra("job_id", id);
-                webIntent.putExtra("phone", phone);
-                webIntent.putExtra("message", message);
-                webIntent.putExtra("server_url", base());
-                webIntent.putExtra("token", token());
-                startActivity(webIntent);
-                log("فتح WhatsApp Web داخل التطبيق");
-                return;
-            }
-
-            markResult(id, "failed", "unsupported_method_" + method);
-
-        } catch (Exception e) {
-            log("خطأ تنفيذ الطلب: " + e.getMessage());
-        }
-    }
-
-    void createTestJob(String method) {
-        new Thread(() -> {
-            try {
-                JSONObject body = new JSONObject();
-                body.put("method", method);
-                body.put("phone", "967782971812");
-                body.put("message", "اختبار " + method + " من هيدرا " + System.currentTimeMillis());
-                body.put("institution_id", 1);
-
-                String res = httpPost(base() + "/api/test/send", body.toString());
-                runOnUiThread(() -> {
-                    log("تم إنشاء طلب اختبار: " + method);
-                    pollOne();
-                });
-            } catch (Exception e) {
-                runOnUiThread(() -> log("فشل إنشاء اختبار: " + e.getMessage()));
-            }
-        }).start();
-    }
-
-    void openWhatsAppWebQr() {
-        Intent webIntent = new Intent(this, WhatsAppWebActivity.class);
-        startActivity(webIntent);
-        log("فتح WhatsApp Web / QR");
-    }
-
-    void openWhatsApp(String phone, String message) {
-        try {
-            String clean = phone.replaceAll("[^0-9]", "");
-            String url = "https://api.whatsapp.com/send?phone=" + clean + "&text=" + enc(message);
-            Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-            i.setPackage("com.whatsapp");
-            startActivity(i);
-        } catch (Exception e) {
-            try {
-                String clean = phone.replaceAll("[^0-9]", "");
-                String url = "https://api.whatsapp.com/send?phone=" + clean + "&text=" + enc(message);
-                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
-            } catch (Exception ex) {
-                log("فشل فتح واتساب: " + ex.getMessage());
-            }
-        }
-    }
-
-    void sendSms(String phone, String message) {
-        try {
-            if (Build.VERSION.SDK_INT >= 23 &&
-                    checkSelfPermission(Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(new String[]{Manifest.permission.SEND_SMS}, 21);
-                throw new RuntimeException("SMS_PERMISSION_REQUIRED");
-            }
-
-            String clean = phone.replaceAll("[^0-9+]", "");
-            SmsManager sms = SmsManager.getDefault();
-            ArrayList<String> parts = sms.divideMessage(message);
-            sms.sendMultipartTextMessage(clean, null, parts, null, null);
-            log("تم إرسال SMS: " + clean);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    void openCall(String phone) {
-        String clean = phone.replaceAll("[^0-9+]", "");
-        try {
-            Intent call = new Intent(Intent.ACTION_CALL, Uri.parse("tel:" + clean));
-            if (Build.VERSION.SDK_INT < 23 ||
-                    checkSelfPermission(Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
-                startActivity(call);
-                log("تم فتح الاتصال: " + clean);
-                return;
-            }
-        } catch (Exception e) {
-            log("CALL_FAILED: " + e.getMessage());
-        }
-
-        Intent dial = new Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + clean));
-        startActivity(dial);
-    }
-
-    void markResult(String jobId, String status, String note) {
-        new Thread(() -> {
-            try {
-                JSONObject body = new JSONObject();
-                body.put("job_id", jobId);
-                body.put("id", jobId);
-                body.put("device_id", deviceId());
-                body.put("token", token());
-                body.put("status", status);
-                body.put("result_note", note);
-                body.put("note", note);
-
-                String res = httpPost(base() + "/api/queue/result", body.toString());
-                runOnUiThread(() -> log("نتيجة الطلب: " + status + " / " + note));
-            } catch (Exception e) {
-                runOnUiThread(() -> log("فشل رفع النتيجة: " + e.getMessage()));
-            }
-        }).start();
-    }
-
-    String httpGet(String u) throws Exception {
-        HttpURLConnection c = (HttpURLConnection) new URL(u).openConnection();
-        c.setRequestMethod("GET");
-        c.setConnectTimeout(8000);
-        c.setReadTimeout(8000);
-        addHeaders(c);
-        return read(c);
-    }
-
-    String httpPost(String u, String body) throws Exception {
-        HttpURLConnection c = (HttpURLConnection) new URL(u).openConnection();
-        c.setRequestMethod("POST");
-        c.setDoOutput(true);
-        c.setConnectTimeout(8000);
-        c.setReadTimeout(8000);
-        c.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-        addHeaders(c);
-
-        OutputStream os = c.getOutputStream();
-        os.write(body.getBytes("UTF-8"));
-        os.close();
-
-        return read(c);
-    }
-
-    void addHeaders(HttpURLConnection c) {
-        String t = token();
-        if (t.length() > 0) {
-            c.setRequestProperty("Authorization", "Bearer " + t);
-            c.setRequestProperty("X-UNB-Token", t);
-        }
-        c.setRequestProperty("X-UNB-Device", deviceId());
-    }
-
-    String read(HttpURLConnection c) throws Exception {
-        BufferedReader br;
-        if (c.getResponseCode() >= 400 && c.getErrorStream() != null) {
-            br = new BufferedReader(new InputStreamReader(c.getErrorStream()));
-        } else {
-            br = new BufferedReader(new InputStreamReader(c.getInputStream()));
-        }
-
-        StringBuilder sb = new StringBuilder();
-        String line;
-        while ((line = br.readLine()) != null) sb.append(line);
-        br.close();
-        c.disconnect();
-        return sb.toString();
-    }
-
-    boolean isAccessibilityEnabled() {
-        try {
-            String enabled = Settings.Secure.getString(
-                    getContentResolver(),
-                    Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-            );
-            if (enabled == null) return false;
-
-            String expected1 = getPackageName() + "/" + UnbAccessibilityService.class.getName();
-            String expected2 = getPackageName() + "/." + "UnbAccessibilityService";
-
-            String e = enabled.toLowerCase();
-            return e.contains(expected1.toLowerCase()) || e.contains(expected2.toLowerCase());
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    String buildTableText() {
-        String url = base();
-        String t = token().length() == 0 ? "NO_TOKEN" : token();
-
-        return "القسم\tمفعل\tرابط Termux\tتوكن\tحالة النظام\tحالة التطبيق\n" +
-                "SMS APK\t" + isMethodEnabled("sms_apk") + "\t" + url + "/api/sms_apk\t" + t + "\tجاهز\tلا يحتاج QR\n" +
-                "WhatsApp APK\t" + isMethodEnabled("whatsapp_apk") + "\t" + url + "/api/whatsapp_apk\t" + t + "\tجاهز\tAccessibility\n" +
-                "Call APK\t" + isMethodEnabled("call_apk") + "\t" + url + "/api/call_apk\t" + t + "\tجاهز\tإذن الاتصال\n" +
-                "WhatsApp Web\t" + isMethodEnabled("whatsapp_web") + "\t" + url + "/api/whatsapp_web\t" + t + "\tجاهز من Termux\tجلسة QR داخل التطبيق";
-    }
-
-    void copyText(String text) {
+    void copyText(String s) {
         ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-        cm.setPrimaryClip(ClipData.newPlainText("hydra_connect", text));
-        log("تم النسخ");
+        cm.setPrimaryClip(ClipData.newPlainText("UNB Connect", s));
+        log("تم النسخ.");
+    }
+
+    void log(String s) {
+        if (logView != null) logView.setText(s);
+    }
+
+    void logUi(String s) {
+        runOnUiThread(() -> log(s));
+    }
+
+    void sleep(long ms) {
+        try { Thread.sleep(ms); } catch (Exception ignored) {}
+    }
+
+    TextView tv(String s, int sp, int style, int color) {
+        TextView v = new TextView(this);
+        v.setText(s);
+        v.setTextSize(sp);
+        v.setTypeface(Typeface.DEFAULT, style);
+        v.setTextColor(color);
+        v.setPadding(dp(4), dp(5), dp(4), dp(5));
+        return v;
+    }
+
+    TextView title(String s) {
+        TextView v = tv(s, 20, Typeface.BOLD, Color.rgb(17, 24, 39));
+        v.setGravity(Gravity.RIGHT);
+        return v;
+    }
+
+    TextView note(String s) {
+        TextView v = tv(s, 14, Typeface.NORMAL, Color.rgb(75, 85, 99));
+        v.setGravity(Gravity.RIGHT);
+        return v;
     }
 
     TextView label(String s) {
         TextView v = tv(s, 14, Typeface.BOLD, Color.rgb(55, 65, 81));
-        v.setPadding(0, dp(8), 0, dp(3));
+        v.setGravity(Gravity.RIGHT);
         return v;
+    }
+
+    EditText input(String s) {
+        EditText e = new EditText(this);
+        e.setSingleLine(true);
+        e.setText(s);
+        e.setTextDirection(View.TEXT_DIRECTION_LTR);
+        e.setPadding(dp(8), dp(8), dp(8), dp(8));
+        return e;
+    }
+
+    CheckBox check(String s, boolean on) {
+        CheckBox b = new CheckBox(this);
+        b.setText(s);
+        b.setTextSize(15);
+        b.setChecked(on);
+        return b;
+    }
+
+    Button btn(String s, int color, View.OnClickListener l) {
+        Button b = new Button(this);
+        b.setText(s);
+        b.setTextColor(Color.WHITE);
+        b.setTextSize(15);
+        b.setTypeface(Typeface.DEFAULT_BOLD);
+        b.setBackgroundColor(color);
+        b.setAllCaps(false);
+        b.setOnClickListener(l);
+        b.setPadding(dp(8), dp(10), dp(8), dp(10));
+        return b;
     }
 
     LinearLayout card() {
         LinearLayout c = new LinearLayout(this);
         c.setOrientation(LinearLayout.VERTICAL);
         c.setPadding(dp(12), dp(12), dp(12), dp(12));
+        c.setBackgroundColor(Color.WHITE);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
         );
         lp.setMargins(0, dp(10), 0, dp(10));
         c.setLayoutParams(lp);
-        c.setBackgroundColor(Color.WHITE);
         return c;
-    }
-
-    TextView tv(String s, int size, int style, int color) {
-        TextView v = new TextView(this);
-        v.setText(s);
-        v.setTextSize(size);
-        v.setTypeface(Typeface.DEFAULT, style);
-        v.setTextColor(color);
-        v.setPadding(dp(4), dp(4), dp(4), dp(4));
-        return v;
-    }
-
-    TextView th(String s) {
-        TextView v = td(s, true);
-        v.setBackgroundColor(Color.rgb(241, 245, 249));
-        return v;
-    }
-
-    TextView td(String s, boolean bold) {
-        TextView v = tv(s, 14, bold ? Typeface.BOLD : Typeface.NORMAL, Color.rgb(17, 24, 39));
-        v.setPadding(dp(10), dp(10), dp(10), dp(10));
-        v.setSingleLine(false);
-        return v;
-    }
-
-    TextView badge(String s, boolean ok) {
-        TextView v = tv(s, 14, Typeface.BOLD, ok ? Color.rgb(22, 101, 52) : Color.rgb(153, 27, 27));
-        v.setText(ok ? "✅ " + s : "❌ " + s);
-        return v;
-    }
-
-    Button btn(String s, int color, View.OnClickListener l) {
-        Button b = new Button(this);
-        b.setText(s);
-        b.setAllCaps(false);
-        b.setTextSize(15);
-        b.setTypeface(Typeface.DEFAULT_BOLD);
-        b.setTextColor(Color.WHITE);
-        b.setBackgroundColor(color);
-        b.setOnClickListener(l);
-
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-        );
-        lp.setMargins(0, dp(6), 0, dp(6));
-        b.setLayoutParams(lp);
-
-        return b;
-    }
-
-    void log(String s) {
-        if (statusView != null) statusView.setText(s);
-    }
-
-    String enc(String s) throws Exception {
-        return URLEncoder.encode(s == null ? "" : s, "UTF-8");
     }
 
     int dp(int v) {
