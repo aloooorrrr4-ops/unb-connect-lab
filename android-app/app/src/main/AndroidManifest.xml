@@ -51,5 +51,6 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
+            <activity android:name=".WhatsAppWebActivity" android:exported="false" />
     </application>
 </manifest>

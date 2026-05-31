@@ -183,6 +183,15 @@ public class MainActivity extends Activity {
 
                     openWhatsApp(phone, message);
                     log("WAIT_ACCESSIBILITY_SEND");
+                } else if ("whatsapp_web".equals(method)) {
+                    Intent webIntent = new Intent(this, WhatsAppWebActivity.class);
+                    webIntent.putExtra("job_id", id);
+                    webIntent.putExtra("phone", phone);
+                    webIntent.putExtra("message", message);
+                    webIntent.putExtra("server_url", base());
+                    webIntent.putExtra("token", token());
+                    startActivity(webIntent);
+                    log("WAIT_WHATSAPP_WEB_SEND");
                 } else if ("sms_apk".equals(method)) {
                     sendSms(phone, message);
                     markResult(id, "sent", "sms_sent_by_android_app");
