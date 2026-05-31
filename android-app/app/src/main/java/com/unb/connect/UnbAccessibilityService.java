@@ -6,6 +6,7 @@ import android.content.SharedPreferences;
 import android.graphics.Path;
 import android.graphics.Rect;
 import android.os.Build;
+import android.util.DisplayMetrics;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import org.json.JSONObject;
@@ -30,25 +31,23 @@ public class UnbAccessibilityService extends AccessibilityService {
             if (jobId.length() == 0) return;
 
             long now = System.currentTimeMillis();
-            if (now - lastClickAt < 2500) return;
+            if (now - lastClickAt < 3000) return;
 
             AccessibilityNodeInfo root = getRootInActiveWindow();
             if (root == null) return;
 
             boolean clicked = false;
 
-            AccessibilityNodeInfo send = findSendButton(root);
-            if (send != null) {
-                clicked = clickNode(send);
+            AccessibilityNodeInfo send = findSendByName(root);
+            if (send != null) clicked = clickNode(send);
+
+            if (!clicked) {
+                AccessibilityNodeInfo input = findMessageInput(root);
+                if (input != null) clicked = tapSendBesideInput(input);
             }
 
             if (!clicked) {
-                AccessibilityNodeInfo icon = findBottomSendIcon(root);
-                if (icon != null) clicked = clickNode(icon);
-            }
-
-            if (!clicked) {
-                clicked = clickBottomLeftFallback(root);
+                clicked = tapKnownWhatsAppLeftSendPosition();
             }
 
             if (clicked) {
@@ -59,7 +58,7 @@ public class UnbAccessibilityService extends AccessibilityService {
 
                 p.edit().remove("pending_job_id").apply();
 
-                markResult(base, token, jobId, "sent", "whatsapp_send_clicked_by_accessibility_fallback");
+                markResult(base, token, jobId, "sent", "whatsapp_send_precise_icon_tap_v7");
             }
         } catch (Exception ignored) {}
     }
@@ -67,14 +66,12 @@ public class UnbAccessibilityService extends AccessibilityService {
     @Override
     public void onInterrupt() {}
 
-    private AccessibilityNodeInfo findSendButton(AccessibilityNodeInfo n) {
+    private AccessibilityNodeInfo findSendByName(AccessibilityNodeInfo n) {
         if (n == null) return null;
 
         String id = "";
         try {
-            if (n.getViewIdResourceName() != null) {
-                id = n.getViewIdResourceName().toLowerCase();
-            }
+            if (n.getViewIdResourceName() != null) id = n.getViewIdResourceName().toLowerCase();
         } catch (Exception ignored) {}
 
         CharSequence d = n.getContentDescription();
@@ -86,91 +83,133 @@ public class UnbAccessibilityService extends AccessibilityService {
                 id
         ).toLowerCase();
 
-        boolean looksSend =
+        boolean isSend =
                 s.contains("send") ||
                 s.contains("إرسال") ||
                 s.contains("ارسال") ||
+                id.endsWith(":id/send") ||
                 id.contains("send");
 
-        if (looksSend && n.isEnabled()) return n;
+        if (isSend && n.isEnabled()) return n;
 
         for (int i = 0; i < n.getChildCount(); i++) {
-            AccessibilityNodeInfo r = findSendButton(n.getChild(i));
+            AccessibilityNodeInfo r = findSendByName(n.getChild(i));
             if (r != null) return r;
         }
-
         return null;
     }
 
-    private AccessibilityNodeInfo findBottomSendIcon(AccessibilityNodeInfo root) {
-        Rect screen = new Rect();
-        root.getBoundsInScreen(screen);
-
-        return findBottomClickable(root, screen);
-    }
-
-    private AccessibilityNodeInfo findBottomClickable(AccessibilityNodeInfo n, Rect screen) {
+    private AccessibilityNodeInfo findMessageInput(AccessibilityNodeInfo n) {
         if (n == null) return null;
 
         Rect r = new Rect();
         n.getBoundsInScreen(r);
 
-        int sw = Math.max(1, screen.width());
-        int sh = Math.max(1, screen.height());
-        int w = r.width();
-        int h = r.height();
+        String cls = "";
+        String id = "";
+        String text = "";
+        try {
+            if (n.getClassName() != null) cls = n.getClassName().toString().toLowerCase();
+            if (n.getViewIdResourceName() != null) id = n.getViewIdResourceName().toLowerCase();
+            if (n.getText() != null) text = n.getText().toString();
+        } catch (Exception ignored) {}
 
-        boolean nearBottom = r.top > (int)(sh * 0.45);
-        boolean goodSize = w >= 35 && w <= 180 && h >= 35 && h <= 180;
-        boolean sideButton = r.left < (int)(sw * 0.22) || r.right > (int)(sw * 0.78);
+        boolean looksInput =
+                cls.contains("edittext") ||
+                id.contains("entry") ||
+                id.contains("input") ||
+                id.contains("message");
 
-        if (n.isEnabled() && n.isClickable() && nearBottom && goodSize && sideButton) {
-            return n;
-        }
+        boolean goodBounds =
+                r.width() > 250 &&
+                r.height() > 40 &&
+                r.height() < 220 &&
+                r.top > 300;
+
+        if (looksInput && goodBounds && n.isEnabled()) return n;
 
         for (int i = 0; i < n.getChildCount(); i++) {
-            AccessibilityNodeInfo x = findBottomClickable(n.getChild(i), screen);
+            AccessibilityNodeInfo x = findMessageInput(n.getChild(i));
             if (x != null) return x;
         }
 
         return null;
     }
 
+    private boolean tapSendBesideInput(AccessibilityNodeInfo input) {
+        if (Build.VERSION.SDK_INT < 24) return false;
+
+        try {
+            Rect r = new Rect();
+            input.getBoundsInScreen(r);
+
+            DisplayMetrics dm = getResources().getDisplayMetrics();
+            int sw = dm.widthPixels;
+
+            int y = r.top + (r.height() / 2);
+
+            int leftX = Math.max(35, r.left / 2);
+            int rightX = Math.min(sw - 35, r.right + ((sw - r.right) / 2));
+
+            int x;
+            if (r.left > sw * 0.12) {
+                x = leftX;
+            } else {
+                x = rightX;
+            }
+
+            return tap(x, y);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean tapKnownWhatsAppLeftSendPosition() {
+        if (Build.VERSION.SDK_INT < 24) return false;
+
+        try {
+            DisplayMetrics dm = getResources().getDisplayMetrics();
+            int sw = dm.widthPixels;
+            int sh = dm.heightPixels;
+
+            int x = Math.max(55, (int)(sw * 0.075));
+            int y1 = (int)(sh * 0.535);
+            int y2 = (int)(sh * 0.565);
+
+            boolean a = tap(x, y1);
+            if (!a) return tap(x, y2);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean tap(int x, int y) {
+        if (Build.VERSION.SDK_INT < 24) return false;
+
+        try {
+            Path path = new Path();
+            path.moveTo(x, y);
+
+            GestureDescription gesture = new GestureDescription.Builder()
+                    .addStroke(new GestureDescription.StrokeDescription(path, 0, 160))
+                    .build();
+
+            return dispatchGesture(gesture, null, null);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     private boolean clickNode(AccessibilityNodeInfo n) {
         AccessibilityNodeInfo cur = n;
-
         while (cur != null) {
             if (cur.isClickable() && cur.isEnabled()) {
                 return cur.performAction(AccessibilityNodeInfo.ACTION_CLICK);
             }
             cur = cur.getParent();
         }
-
         return false;
-    }
-
-    private boolean clickBottomLeftFallback(AccessibilityNodeInfo root) {
-        if (Build.VERSION.SDK_INT < 24) return false;
-
-        try {
-            Rect screen = new Rect();
-            root.getBoundsInScreen(screen);
-
-            int x = Math.max(45, screen.left + (int)(screen.width() * 0.07));
-            int y = screen.top + (int)(screen.height() * 0.55);
-
-            Path path = new Path();
-            path.moveTo(x, y);
-
-            GestureDescription gesture = new GestureDescription.Builder()
-                    .addStroke(new GestureDescription.StrokeDescription(path, 0, 120))
-                    .build();
-
-            dispatchGesture(gesture, null, null);
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
     }
 
     private void markResult(String base, String token, String jobId, String status, String note) {
