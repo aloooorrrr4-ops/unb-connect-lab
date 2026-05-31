@@ -15,7 +15,7 @@ android {
         applicationId "com.unb.connect"
         minSdk 23
         targetSdk 35
-        versionCode 24
-        versionName "0.24.0-wa-web-app-like-main"
+        versionCode 25
+        versionName "0.25.0-wa-web-current-chat-direct-send"
     }
 }

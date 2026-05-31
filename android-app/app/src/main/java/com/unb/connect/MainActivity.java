@@ -78,6 +78,7 @@ public class MainActivity extends Activity {
     String waWebJobId = "";
     String waWebPhone = "";
     String waWebMessage = "";
+    String currentWaWebPhone = "";
 
     final int DARK = Color.rgb(15, 23, 42);
     final int GREEN = Color.rgb(13, 148, 136);
@@ -509,12 +510,26 @@ public class MainActivity extends Activity {
                 return;
             }
 
+            showWhatsAppWeb();
+            ensureWhatsAppWebLoaded();
+
+            // UNB_WA_WEB_CURRENT_CHAT_DIRECT_SEND_V25
+            // لا نفتح رابط الإرسال مع كل طلب إذا كانت نفس المحادثة مفتوحة.
+            // نكتب داخل صندوق المحادثة الحالي ونضغط إرسال مباشرة.
+            if (currentWaWebPhone.equals(waWebPhone)) {
+                logMini("نفس المحادثة مفتوحة. إرسال مباشر بدون فتح الصفحة: " + waWebPhone);
+                fillAndSendCurrentChat();
+                return;
+            }
+
             waWebLoadedOnce = true;
 
             String encoded = URLEncoder.encode(waWebMessage, "UTF-8");
             String url = "https://web.whatsapp.com/send?phone=" + waWebPhone + "&text=" + encoded + "&app_absent=0";
 
-            logMini("تحديث نفس WhatsApp Web للمحادثة: " + waWebPhone);
+            currentWaWebPhone = waWebPhone;
+
+            logMini("تغيير المحادثة مرة واحدة فقط إلى: " + waWebPhone);
             waWebView.loadUrl(url);
 
             scheduleWhatsAppWebFastAttempts();
@@ -522,6 +537,75 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
             setStatus("خطأ تجهيز رابط WhatsApp Web: " + e.getMessage());
         }
+    }
+
+    void fillAndSendCurrentChat() {
+        if (waWebResultSent) return;
+
+        waWebAttempts++;
+        setStatus("إرسال مباشر داخل المحادثة المفتوحة رقم " + waWebAttempts + " ...");
+
+        String quoted = JSONObject.quote(waWebMessage == null ? "" : waWebMessage);
+
+        final String js =
+                "(function(msg){\n" +
+                "  function vis(e){ if(!e) return false; var r=e.getBoundingClientRect(); return r.width>0 && r.height>0; }\n" +
+                "  function put(el,v){\n" +
+                "    try{\n" +
+                "      el.focus();\n" +
+                "      document.execCommand('selectAll', false, null);\n" +
+                "      document.execCommand('insertText', false, v);\n" +
+                "      el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:v}));\n" +
+                "    }catch(e){ try{ el.textContent=v; el.dispatchEvent(new Event('input',{bubbles:true})); }catch(x){} }\n" +
+                "  }\n" +
+                "  function btnFrom(e){ return e.closest('button') || e.closest('[role=\"button\"]') || e; }\n" +
+                "  var boxes=[].slice.call(document.querySelectorAll('footer div[contenteditable=\"true\"], div[contenteditable=\"true\"][role=\"textbox\"], div[contenteditable=\"true\"]')).filter(vis);\n" +
+                "  if(!boxes.length) return 'NO_COMPOSE_BOX';\n" +
+                "  var box=boxes[boxes.length-1];\n" +
+                "  put(box,msg);\n" +
+                "  setTimeout(function(){\n" +
+                "    var selectors=['span[data-icon=\"send\"]','[data-icon=\"send\"]','[data-testid=\"send\"]','[data-icon=\"wds-ic-send-filled\"]','button[aria-label*=\"Send\"]','div[aria-label*=\"Send\"]','button[aria-label*=\"إرسال\"]','div[aria-label*=\"إرسال\"]'];\n" +
+                "    for(var s of selectors){\n" +
+                "      var arr=[].slice.call(document.querySelectorAll(s));\n" +
+                "      for(var el of arr){ var b=btnFrom(el); if(vis(b)){ b.click(); window.UNB_DIRECT_SENT='YES'; return; } }\n" +
+                "    }\n" +
+                "    window.UNB_DIRECT_SENT='NO_BUTTON';\n" +
+                "  },350);\n" +
+                "  return 'TEXT_INSERTED_DIRECT';\n" +
+                "})(" + quoted + ")";
+
+        waWebView.evaluateJavascript(js, value -> {
+            String v = String.valueOf(value);
+            logMini("WA_WEB_DIRECT_SEND_" + waWebAttempts + ": " + v);
+
+            handler.postDelayed(() -> {
+                waWebView.evaluateJavascript("(function(){return window.UNB_DIRECT_SENT || '';})()", result -> {
+                    String r = String.valueOf(result);
+                    logMini("WA_WEB_DIRECT_RESULT: " + r);
+
+                    if (r.contains("YES") || v.contains("TEXT_INSERTED_DIRECT")) {
+                        waWebResultSent = true;
+                        setStatus("تم إرسال WhatsApp Web مباشرة من المحادثة المفتوحة.");
+                        markWhatsAppWebResult("sent", "whatsapp_web_sent_by_current_chat_direct_v25");
+
+                        if (waWebQueueRunning) {
+                            handler.postDelayed(() -> runNextWhatsAppWebJob(), 700);
+                        }
+                        return;
+                    }
+
+                    if (waWebAttempts < 4) {
+                        handler.postDelayed(() -> fillAndSendCurrentChat(), 800);
+                    } else {
+                        // إذا فشل الإرسال المباشر، نغيّر المحادثة بالرابط كاحتياط.
+                        currentWaWebPhone = "";
+                        waWebAttempts = 0;
+                        logMini("فشل الإرسال المباشر. سيتم فتح المحادثة كاحتياط.");
+                        handler.postDelayed(() -> loadWhatsAppWebSendPage(), 500);
+                    }
+                });
+            }, 800);
+        });
     }
 
     void scheduleWhatsAppWebFastAttempts() {
@@ -561,12 +645,12 @@ public class MainActivity extends Activity {
 
         waWebView.evaluateJavascript(js, value -> {
             String v = String.valueOf(value);
-            logMini("WA_WEB_APP_LIKE_ATTEMPT_" + waWebAttempts + ": " + v);
+            logMini("WA_WEB_CURRENT_CHAT_ATTEMPT_" + waWebAttempts + ": " + v);
 
             if (v.contains("CLICKED_SEND")) {
                 waWebResultSent = true;
                 setStatus("تم إرسال WhatsApp Web.");
-                markWhatsAppWebResult("sent", "whatsapp_web_sent_by_app_like_main_v24");
+                markWhatsAppWebResult("sent", "whatsapp_web_sent_by_current_chat_direct_v25");
 
                 if (waWebQueueRunning) {
                     handler.postDelayed(() -> runNextWhatsAppWebJob(), 900);
@@ -579,7 +663,7 @@ public class MainActivity extends Activity {
             } else {
                 waWebResultSent = true;
                 setStatus("فشل العثور على زر إرسال WhatsApp Web.");
-                markWhatsAppWebResult("failed", "whatsapp_web_send_button_not_found_app_like_main_v24");
+                markWhatsAppWebResult("failed", "whatsapp_web_send_button_not_found_current_chat_direct_v25");
 
                 if (waWebQueueRunning) {
                     handler.postDelayed(() -> runNextWhatsAppWebJob(), 900);
