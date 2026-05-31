@@ -7,3 +7,10 @@ id_ed25519.pub
 .ssh/
 *.pem
 *.key
+
+# UNB temporary runtime data - do not commit
+data/
+*.log
+server_3108.log
+web_token.txt
+termux_queue.json
