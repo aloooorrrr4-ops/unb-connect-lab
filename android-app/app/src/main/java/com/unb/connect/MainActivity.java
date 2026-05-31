@@ -71,6 +71,7 @@ public class MainActivity extends Activity {
     JSONArray waWebQueue = new JSONArray();
     int waWebIndex = 0;
     int waWebAttempts = 0;
+    int waWebOpenAttempts = 0;
     boolean waWebResultSent = false;
     boolean waWebQueueRunning = false;
     boolean waWebLoadedOnce = false;
@@ -107,8 +108,13 @@ public class MainActivity extends Activity {
         buildUi();
         setupEmbeddedWhatsAppWeb();
 
-        waWebLoadedOnce = false;
-        logMini("جاهز. WhatsApp Web يتحمل عند QR أو أول إرسال فقط.");
+        // UNB_WA_WEB_SEARCH_SAME_PAGE_SEND_V27
+        // WhatsApp Web متصل بالشاشة الرئيسية ويتحدث عند فتح التطبيق.
+        // الإرسال لا يستخدم رابط send، بل يبحث داخل نفس الصفحة ثم يرسل.
+        currentWaWebPhone = "";
+        waWebLoadedOnce = true;
+        logMini("WhatsApp Web متصل بالثلث الأخير ويتحدث عند فتح التطبيق.");
+        waWebView.loadUrl("https://web.whatsapp.com/");
     }
 
     void buildUi() {
@@ -129,9 +135,11 @@ public class MainActivity extends Activity {
         controls.addView(methodsCompact());
         controls.addView(actionsCompact());
 
+        // الرئيسية فوق، و WhatsApp Web ثابت في الثلث الأخير.
         root.addView(controlsScroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(315)
+                0,
+                2
         ));
 
         webPanel = new LinearLayout(this);
@@ -361,12 +369,20 @@ public class MainActivity extends Activity {
             if (controlsScroll != null) {
                 controlsScroll.setLayoutParams(new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
-                        dp(130)
+                        0,
+                        1
+                ));
+            }
+            if (webPanel != null) {
+                webPanel.setLayoutParams(new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        0,
+                        2
                 ));
             }
             showWhatsAppWeb();
             ensureWhatsAppWebLoaded();
-            setStatus("تم تكبير مساحة WhatsApp Web.");
+            setStatus("تم تكبير WhatsApp Web مع بقائه متصلًا بالشاشة الرئيسية.");
         });
     }
 
@@ -375,10 +391,18 @@ public class MainActivity extends Activity {
             if (controlsScroll != null) {
                 controlsScroll.setLayoutParams(new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
-                        dp(315)
+                        0,
+                        2
                 ));
             }
-            setStatus("تم إظهار التحكم.");
+            if (webPanel != null) {
+                webPanel.setLayoutParams(new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        0,
+                        1
+                ));
+            }
+            setStatus("الشاشة الرئيسية فوق و WhatsApp Web ثابت في الثلث الأخير.");
         });
     }
 
@@ -405,13 +429,23 @@ public class MainActivity extends Activity {
             return;
         }
 
-        try {
-            String url = "https://web.whatsapp.com/send?phone=" + digits + "&text=&app_absent=0";
-            logMini("فتح رقم داخل WhatsApp Web: " + digits);
-            waWebView.loadUrl(url);
-        } catch (Exception e) {
-            logMini("فشل فتح الرقم: " + e.getMessage());
-        }
+        waWebPhone = digits;
+        waWebMessage = "";
+        currentWaWebPhone = "";
+
+        String quotedPhone = JSONObject.quote(digits);
+
+        String js =
+                "(function(phone){\n" +
+                "  function vis(e){ if(!e) return false; var r=e.getBoundingClientRect(); return r.width>0 && r.height>0; }\n" +
+                "  function put(el,v){ try{ el.focus(); document.execCommand('selectAll',false,null); document.execCommand('insertText',false,v); el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:v})); }catch(e){} }\n" +
+                "  var searchSelectors=['span[data-icon=\"search\"]','[data-icon=\"search\"]','button[aria-label*=\"Search\"]','div[aria-label*=\"Search\"]','button[aria-label*=\"بحث\"]','div[aria-label*=\"بحث\"]'];\n" +
+                "  for(var s of searchSelectors){ var a=[].slice.call(document.querySelectorAll(s)); for(var el of a){ if(vis(el)){ (el.closest('button')||el.closest('[role=\"button\"]')||el).click(); break; } } }\n" +
+                "  setTimeout(function(){ var all=[].slice.call(document.querySelectorAll('div[contenteditable=\"true\"], input')).filter(vis); if(all.length){ put(all[0], phone); } },500);\n" +
+                "  return 'PHONE_SEARCH_STARTED_SAME_PAGE';\n" +
+                "})(" + quotedPhone + ")";
+
+        waWebView.evaluateJavascript(js, value -> logMini("فتح رقم عبر بحث نفس الصفحة: " + value));
     }
 
     void openWhatsAppWebSearch() {
@@ -513,42 +547,120 @@ public class MainActivity extends Activity {
             showWhatsAppWeb();
             ensureWhatsAppWebLoaded();
 
-            // UNB_WA_WEB_CURRENT_CHAT_DIRECT_SEND_V25
-            // لا نفتح رابط الإرسال مع كل طلب إذا كانت نفس المحادثة مفتوحة.
-            // نكتب داخل صندوق المحادثة الحالي ونضغط إرسال مباشرة.
+            waWebAttempts = 0;
+            waWebOpenAttempts = 0;
+
+            // UNB_WA_WEB_SEARCH_SAME_PAGE_SEND_V27
+            // لا نفتح رابط send?phone نهائيًا.
+            // إذا نفس المحادثة مفتوحة: إرسال مباشر من صندوق الرسالة.
+            // إذا الرقم تغيّر: نستخدم بحث WhatsApp Web داخل نفس الصفحة.
             if (currentWaWebPhone.equals(waWebPhone)) {
-                logMini("نفس المحادثة مفتوحة. إرسال مباشر بدون فتح الصفحة: " + waWebPhone);
+                logMini("نفس المحادثة مفتوحة. إرسال مباشر بدون فتح صفحة.");
                 fillAndSendCurrentChat();
-                return;
+            } else {
+                logMini("الرقم تغيّر. سيتم البحث داخل نفس WhatsApp Web بدون فتح رابط جديد.");
+                openChatBySearchThenSend();
             }
 
-            waWebLoadedOnce = true;
-
-            String encoded = URLEncoder.encode(waWebMessage, "UTF-8");
-            String url = "https://web.whatsapp.com/send?phone=" + waWebPhone + "&text=" + encoded + "&app_absent=0";
-
-            currentWaWebPhone = waWebPhone;
-
-            logMini("تغيير المحادثة مرة واحدة فقط إلى: " + waWebPhone);
-            waWebView.loadUrl(url);
-
-            scheduleWhatsAppWebFastAttempts();
-
         } catch (Exception e) {
-            setStatus("خطأ تجهيز رابط WhatsApp Web: " + e.getMessage());
+            setStatus("خطأ تجهيز WhatsApp Web: " + e.getMessage());
         }
+    }
+
+    void openChatBySearchThenSend() {
+        if (waWebResultSent) return;
+
+        waWebOpenAttempts++;
+        setStatus("بحث داخل WhatsApp Web عن الرقم: " + waWebPhone);
+
+        String quotedPhone = JSONObject.quote(waWebPhone == null ? "" : waWebPhone);
+
+        final String js =
+                "(function(phone){\n" +
+                "  window.UNB_SEARCH_OPEN='';\n" +
+                "  function vis(e){ if(!e) return false; var r=e.getBoundingClientRect(); return r.width>0 && r.height>0; }\n" +
+                "  function digits(s){ return String(s||'').replace(/[^0-9]/g,''); }\n" +
+                "  function put(el,v){\n" +
+                "    try{\n" +
+                "      el.focus();\n" +
+                "      document.execCommand('selectAll',false,null);\n" +
+                "      document.execCommand('insertText',false,v);\n" +
+                "      el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:v}));\n" +
+                "    }catch(e){ try{ el.value=v; el.dispatchEvent(new Event('input',{bubbles:true})); }catch(x){} }\n" +
+                "  }\n" +
+                "  var searchSelectors=['span[data-icon=\"search\"]','[data-icon=\"search\"]','button[aria-label*=\"Search\"]','div[aria-label*=\"Search\"]','button[aria-label*=\"بحث\"]','div[aria-label*=\"بحث\"]'];\n" +
+                "  var clicked=false;\n" +
+                "  for(var s of searchSelectors){\n" +
+                "    var arr=[].slice.call(document.querySelectorAll(s));\n" +
+                "    for(var el of arr){ if(vis(el)){ (el.closest('button')||el.closest('[role=\"button\"]')||el).click(); clicked=true; break; } }\n" +
+                "    if(clicked) break;\n" +
+                "  }\n" +
+                "  setTimeout(function(){\n" +
+                "    var inputs=[].slice.call(document.querySelectorAll('div[contenteditable=\"true\"], input')).filter(vis);\n" +
+                "    if(!inputs.length){ window.UNB_SEARCH_OPEN='NO_SEARCH_INPUT'; return; }\n" +
+                "    put(inputs[0], phone);\n" +
+                "    setTimeout(function(){\n" +
+                "      var need=digits(phone);\n" +
+                "      var tail=need.slice(-7);\n" +
+                "      var nodes=[].slice.call(document.querySelectorAll('div[role=\"listitem\"], div[tabindex=\"0\"], [data-testid=\"cell-frame-container\"], [role=\"gridcell\"], [role=\"button\"]')).filter(vis);\n" +
+                "      for(var n of nodes){\n" +
+                "        var t=n.innerText||n.textContent||'';\n" +
+                "        var d=digits(t);\n" +
+                "        if((tail && d.indexOf(tail)>=0) || (need && d.indexOf(need)>=0)){\n" +
+                "          n.click(); window.UNB_SEARCH_OPEN='CLICKED_MATCH'; return;\n" +
+                "        }\n" +
+                "      }\n" +
+                "      var rows=[].slice.call(document.querySelectorAll('div[role=\"listitem\"], [data-testid=\"cell-frame-container\"]')).filter(vis);\n" +
+                "      if(rows.length){ rows[0].click(); window.UNB_SEARCH_OPEN='CLICKED_FIRST'; return; }\n" +
+                "      window.UNB_SEARCH_OPEN='NO_RESULT';\n" +
+                "    },1200);\n" +
+                "  },450);\n" +
+                "  return 'SEARCH_STARTED_SAME_PAGE';\n" +
+                "})(" + quotedPhone + ")";
+
+        waWebView.evaluateJavascript(js, value -> {
+            logMini("WA_WEB_SEARCH_SAME_PAGE_" + waWebOpenAttempts + ": " + value);
+
+            handler.postDelayed(() -> {
+                waWebView.evaluateJavascript("(function(){return window.UNB_SEARCH_OPEN || '';})()", result -> {
+                    String r = String.valueOf(result);
+                    logMini("WA_WEB_SEARCH_RESULT: " + r);
+
+                    if (r.contains("CLICKED_MATCH") || r.contains("CLICKED_FIRST")) {
+                        currentWaWebPhone = waWebPhone;
+                        prefs.edit().putString("current_wa_web_phone", currentWaWebPhone).apply();
+                        handler.postDelayed(() -> fillAndSendCurrentChat(), 1200);
+                        return;
+                    }
+
+                    if (waWebOpenAttempts < 5) {
+                        handler.postDelayed(() -> openChatBySearchThenSend(), 900);
+                        return;
+                    }
+
+                    waWebResultSent = true;
+                    setStatus("لم يتم العثور على المحادثة من البحث داخل WhatsApp Web.");
+                    markWhatsAppWebResult("failed", "whatsapp_web_search_chat_not_found_same_page_v27");
+
+                    if (waWebQueueRunning) {
+                        handler.postDelayed(() -> runNextWhatsAppWebJob(), 900);
+                    }
+                });
+            }, 2600);
+        });
     }
 
     void fillAndSendCurrentChat() {
         if (waWebResultSent) return;
 
         waWebAttempts++;
-        setStatus("إرسال مباشر داخل المحادثة المفتوحة رقم " + waWebAttempts + " ...");
+        setStatus("إرسال من نفس صفحة WhatsApp Web رقم " + waWebAttempts + " ...");
 
         String quoted = JSONObject.quote(waWebMessage == null ? "" : waWebMessage);
 
         final String js =
                 "(function(msg){\n" +
+                "  window.UNB_DIRECT_SENT='';\n" +
                 "  function vis(e){ if(!e) return false; var r=e.getBoundingClientRect(); return r.width>0 && r.height>0; }\n" +
                 "  function put(el,v){\n" +
                 "    try{\n" +
@@ -560,7 +672,7 @@ public class MainActivity extends Activity {
                 "  }\n" +
                 "  function btnFrom(e){ return e.closest('button') || e.closest('[role=\"button\"]') || e; }\n" +
                 "  var boxes=[].slice.call(document.querySelectorAll('footer div[contenteditable=\"true\"], div[contenteditable=\"true\"][role=\"textbox\"], div[contenteditable=\"true\"]')).filter(vis);\n" +
-                "  if(!boxes.length) return 'NO_COMPOSE_BOX';\n" +
+                "  if(!boxes.length){ window.UNB_DIRECT_SENT='NO_COMPOSE_BOX'; return 'NO_COMPOSE_BOX'; }\n" +
                 "  var box=boxes[boxes.length-1];\n" +
                 "  put(box,msg);\n" +
                 "  setTimeout(function(){\n" +
@@ -569,24 +681,23 @@ public class MainActivity extends Activity {
                 "      var arr=[].slice.call(document.querySelectorAll(s));\n" +
                 "      for(var el of arr){ var b=btnFrom(el); if(vis(b)){ b.click(); window.UNB_DIRECT_SENT='YES'; return; } }\n" +
                 "    }\n" +
-                "    window.UNB_DIRECT_SENT='NO_BUTTON';\n" +
-                "  },350);\n" +
+                "    window.UNB_DIRECT_SENT='NO_SEND_BUTTON';\n" +
+                "  },450);\n" +
                 "  return 'TEXT_INSERTED_DIRECT';\n" +
                 "})(" + quoted + ")";
 
         waWebView.evaluateJavascript(js, value -> {
-            String v = String.valueOf(value);
-            logMini("WA_WEB_DIRECT_SEND_" + waWebAttempts + ": " + v);
+            logMini("WA_WEB_DIRECT_SAME_PAGE_" + waWebAttempts + ": " + value);
 
             handler.postDelayed(() -> {
                 waWebView.evaluateJavascript("(function(){return window.UNB_DIRECT_SENT || '';})()", result -> {
                     String r = String.valueOf(result);
                     logMini("WA_WEB_DIRECT_RESULT: " + r);
 
-                    if (r.contains("YES") || v.contains("TEXT_INSERTED_DIRECT")) {
+                    if (r.contains("YES")) {
                         waWebResultSent = true;
-                        setStatus("تم إرسال WhatsApp Web مباشرة من المحادثة المفتوحة.");
-                        markWhatsAppWebResult("sent", "whatsapp_web_sent_by_current_chat_direct_v25");
+                        setStatus("تم إرسال WhatsApp Web من نفس الصفحة.");
+                        markWhatsAppWebResult("sent", "whatsapp_web_sent_by_search_same_page_v27");
 
                         if (waWebQueueRunning) {
                             handler.postDelayed(() -> runNextWhatsAppWebJob(), 700);
@@ -594,17 +705,20 @@ public class MainActivity extends Activity {
                         return;
                     }
 
-                    if (waWebAttempts < 4) {
-                        handler.postDelayed(() -> fillAndSendCurrentChat(), 800);
-                    } else {
-                        // إذا فشل الإرسال المباشر، نغيّر المحادثة بالرابط كاحتياط.
-                        currentWaWebPhone = "";
-                        waWebAttempts = 0;
-                        logMini("فشل الإرسال المباشر. سيتم فتح المحادثة كاحتياط.");
-                        handler.postDelayed(() -> loadWhatsAppWebSendPage(), 500);
+                    if (waWebAttempts < 5) {
+                        handler.postDelayed(() -> fillAndSendCurrentChat(), 900);
+                        return;
+                    }
+
+                    waWebResultSent = true;
+                    setStatus("فشل الإرسال من صندوق المحادثة الحالي.");
+                    markWhatsAppWebResult("failed", "whatsapp_web_direct_send_failed_same_page_v27");
+
+                    if (waWebQueueRunning) {
+                        handler.postDelayed(() -> runNextWhatsAppWebJob(), 900);
                     }
                 });
-            }, 800);
+            }, 950);
         });
     }
 
@@ -650,7 +764,7 @@ public class MainActivity extends Activity {
             if (v.contains("CLICKED_SEND")) {
                 waWebResultSent = true;
                 setStatus("تم إرسال WhatsApp Web.");
-                markWhatsAppWebResult("sent", "whatsapp_web_sent_by_current_chat_direct_v25");
+                markWhatsAppWebResult("sent", "whatsapp_web_sent_by_search_same_page_v27");
 
                 if (waWebQueueRunning) {
                     handler.postDelayed(() -> runNextWhatsAppWebJob(), 900);
@@ -663,7 +777,7 @@ public class MainActivity extends Activity {
             } else {
                 waWebResultSent = true;
                 setStatus("فشل العثور على زر إرسال WhatsApp Web.");
-                markWhatsAppWebResult("failed", "whatsapp_web_send_button_not_found_current_chat_direct_v25");
+                markWhatsAppWebResult("failed", "whatsapp_web_send_button_not_found_search_same_page_v27");
 
                 if (waWebQueueRunning) {
                     handler.postDelayed(() -> runNextWhatsAppWebJob(), 900);
