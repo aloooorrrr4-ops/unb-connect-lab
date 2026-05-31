@@ -108,7 +108,7 @@ public class MainActivity extends Activity {
         buildUi();
         setupEmbeddedWhatsAppWeb();
 
-        // UNB_WA_WEB_SEARCH_SAME_PAGE_SEND_V27
+        // UNB_WA_WEB_CONNECTED_SEARCH_SEND_V28
         // WhatsApp Web متصل بالشاشة الرئيسية ويتحدث عند فتح التطبيق.
         // الإرسال لا يستخدم رابط send، بل يبحث داخل نفس الصفحة ثم يرسل.
         currentWaWebPhone = "";
@@ -144,8 +144,10 @@ public class MainActivity extends Activity {
 
         webPanel = new LinearLayout(this);
         webPanel.setOrientation(LinearLayout.VERTICAL);
+        // UNB_WA_WEB_CONNECTED_LAYOUT_V28
+        // متصل بالشاشة الرئيسية، بدون شكل صفحة ثانية.
         webPanel.setBackgroundColor(Color.WHITE);
-        webPanel.setPadding(dp(6), dp(4), dp(6), dp(6));
+        webPanel.setPadding(0, 0, 0, 0);
 
         webPanel.addView(whatsappToolbar());
 
@@ -309,7 +311,11 @@ public class MainActivity extends Activity {
     }
 
     void setupEmbeddedWhatsAppWeb() {
+        // UNB_WA_WEB_VIEWPORT_FIT_V28
         waWebView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+        waWebView.setHorizontalScrollBarEnabled(true);
+        waWebView.setVerticalScrollBarEnabled(true);
+        waWebView.setInitialScale(80);
 
         WebSettings s = waWebView.getSettings();
         s.setJavaScriptEnabled(true);
@@ -320,6 +326,9 @@ public class MainActivity extends Activity {
         s.setSupportMultipleWindows(false);
         s.setJavaScriptCanOpenWindowsAutomatically(false);
         s.setUserAgentString(DESKTOP_UA);
+        s.setBuiltInZoomControls(true);
+        s.setDisplayZoomControls(false);
+        s.setTextZoom(90);
 
         CookieManager cm = CookieManager.getInstance();
         cm.setAcceptCookie(true);
@@ -550,7 +559,7 @@ public class MainActivity extends Activity {
             waWebAttempts = 0;
             waWebOpenAttempts = 0;
 
-            // UNB_WA_WEB_SEARCH_SAME_PAGE_SEND_V27
+            // UNB_WA_WEB_CONNECTED_SEARCH_SEND_V28
             // لا نفتح رابط send?phone نهائيًا.
             // إذا نفس المحادثة مفتوحة: إرسال مباشر من صندوق الرسالة.
             // إذا الرقم تغيّر: نستخدم بحث WhatsApp Web داخل نفس الصفحة.
@@ -571,7 +580,7 @@ public class MainActivity extends Activity {
         if (waWebResultSent) return;
 
         waWebOpenAttempts++;
-        setStatus("بحث داخل WhatsApp Web عن الرقم: " + waWebPhone);
+        setStatus("بحث داخل نفس WhatsApp Web عن: " + waWebPhone);
 
         String quotedPhone = JSONObject.quote(waWebPhone == null ? "" : waWebPhone);
 
@@ -580,73 +589,92 @@ public class MainActivity extends Activity {
                 "  window.UNB_SEARCH_OPEN='';\n" +
                 "  function vis(e){ if(!e) return false; var r=e.getBoundingClientRect(); return r.width>0 && r.height>0; }\n" +
                 "  function digits(s){ return String(s||'').replace(/[^0-9]/g,''); }\n" +
+                "  function fire(el,t){ try{ el.dispatchEvent(new Event(t,{bubbles:true})); }catch(e){} }\n" +
                 "  function put(el,v){\n" +
                 "    try{\n" +
                 "      el.focus();\n" +
                 "      document.execCommand('selectAll',false,null);\n" +
+                "      document.execCommand('delete',false,null);\n" +
                 "      document.execCommand('insertText',false,v);\n" +
                 "      el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:v}));\n" +
-                "    }catch(e){ try{ el.value=v; el.dispatchEvent(new Event('input',{bubbles:true})); }catch(x){} }\n" +
+                "      fire(el,'change'); fire(el,'keyup');\n" +
+                "    }catch(e){ try{ el.textContent=v; fire(el,'input'); fire(el,'change'); }catch(x){} }\n" +
                 "  }\n" +
-                "  var searchSelectors=['span[data-icon=\"search\"]','[data-icon=\"search\"]','button[aria-label*=\"Search\"]','div[aria-label*=\"Search\"]','button[aria-label*=\"بحث\"]','div[aria-label*=\"بحث\"]'];\n" +
-                "  var clicked=false;\n" +
-                "  for(var s of searchSelectors){\n" +
-                "    var arr=[].slice.call(document.querySelectorAll(s));\n" +
-                "    for(var el of arr){ if(vis(el)){ (el.closest('button')||el.closest('[role=\"button\"]')||el).click(); clicked=true; break; } }\n" +
-                "    if(clicked) break;\n" +
+                "  function clickSearchIcon(){\n" +
+                "    var sels=['span[data-icon=\"search\"]','[data-icon=\"search\"]','button[aria-label*=\"Search\"]','div[aria-label*=\"Search\"]','button[aria-label*=\"بحث\"]','div[aria-label*=\"بحث\"]'];\n" +
+                "    for(var s of sels){ var arr=[].slice.call(document.querySelectorAll(s)); for(var el of arr){ if(vis(el)){ (el.closest('button')||el.closest('[role=\"button\"]')||el).click(); return true; } } }\n" +
+                "    return false;\n" +
                 "  }\n" +
-                "  setTimeout(function(){\n" +
-                "    var inputs=[].slice.call(document.querySelectorAll('div[contenteditable=\"true\"], input')).filter(vis);\n" +
-                "    if(!inputs.length){ window.UNB_SEARCH_OPEN='NO_SEARCH_INPUT'; return; }\n" +
-                "    put(inputs[0], phone);\n" +
-                "    setTimeout(function(){\n" +
-                "      var need=digits(phone);\n" +
-                "      var tail=need.slice(-7);\n" +
-                "      var nodes=[].slice.call(document.querySelectorAll('div[role=\"listitem\"], div[tabindex=\"0\"], [data-testid=\"cell-frame-container\"], [role=\"gridcell\"], [role=\"button\"]')).filter(vis);\n" +
-                "      for(var n of nodes){\n" +
-                "        var t=n.innerText||n.textContent||'';\n" +
-                "        var d=digits(t);\n" +
-                "        if((tail && d.indexOf(tail)>=0) || (need && d.indexOf(need)>=0)){\n" +
-                "          n.click(); window.UNB_SEARCH_OPEN='CLICKED_MATCH'; return;\n" +
-                "        }\n" +
+                "  function findSearchInput(){\n" +
+                "    var all=[].slice.call(document.querySelectorAll('div[contenteditable=\"true\"], input')).filter(vis);\n" +
+                "    var best=null;\n" +
+                "    for(var el of all){\n" +
+                "      var a=((el.getAttribute('aria-label')||'')+' '+(el.getAttribute('title')||'')+' '+(el.getAttribute('placeholder')||'')).toLowerCase();\n" +
+                "      if(a.indexOf('search')>=0 || a.indexOf('بحث')>=0){ best=el; break; }\n" +
+                "    }\n" +
+                "    if(!best && all.length){ best=all[0]; }\n" +
+                "    return best;\n" +
+                "  }\n" +
+                "  function clickResult(){\n" +
+                "    var need=digits(phone);\n" +
+                "    var tail7=need.slice(-7);\n" +
+                "    var tail9=need.slice(-9);\n" +
+                "    var sels=['div[role=\"listitem\"]','[data-testid=\"cell-frame-container\"]','div[tabindex=\"0\"]','[role=\"gridcell\"]','[role=\"button\"]'];\n" +
+                "    var nodes=[];\n" +
+                "    for(var s of sels){ nodes=nodes.concat([].slice.call(document.querySelectorAll(s)).filter(vis)); }\n" +
+                "    var seen=[];\n" +
+                "    nodes=nodes.filter(function(n){ if(seen.indexOf(n)>=0) return false; seen.push(n); return true; });\n" +
+                "    for(var n of nodes){\n" +
+                "      var t=n.innerText||n.textContent||'';\n" +
+                "      var d=digits(t);\n" +
+                "      if((tail9 && d.indexOf(tail9)>=0) || (tail7 && d.indexOf(tail7)>=0) || (need && d.indexOf(need)>=0)){\n" +
+                "        n.click(); return 'CLICKED_MATCH';\n" +
                 "      }\n" +
-                "      var rows=[].slice.call(document.querySelectorAll('div[role=\"listitem\"], [data-testid=\"cell-frame-container\"]')).filter(vis);\n" +
-                "      if(rows.length){ rows[0].click(); window.UNB_SEARCH_OPEN='CLICKED_FIRST'; return; }\n" +
-                "      window.UNB_SEARCH_OPEN='NO_RESULT';\n" +
-                "    },1200);\n" +
-                "  },450);\n" +
-                "  return 'SEARCH_STARTED_SAME_PAGE';\n" +
+                "    }\n" +
+                "    var rows=[].slice.call(document.querySelectorAll('div[role=\"listitem\"], [data-testid=\"cell-frame-container\"]')).filter(vis);\n" +
+                "    if(rows.length===1){ rows[0].click(); return 'CLICKED_SINGLE_RESULT'; }\n" +
+                "    if(rows.length>1){ rows[0].click(); return 'CLICKED_FIRST_RESULT'; }\n" +
+                "    return 'NO_RESULT';\n" +
+                "  }\n" +
+                "  clickSearchIcon();\n" +
+                "  setTimeout(function(){\n" +
+                "    var input=findSearchInput();\n" +
+                "    if(!input){ window.UNB_SEARCH_OPEN='NO_SEARCH_INPUT'; return; }\n" +
+                "    put(input, phone);\n" +
+                "    setTimeout(function(){ window.UNB_SEARCH_OPEN=clickResult(); },1800);\n" +
+                "  },700);\n" +
+                "  return 'SEARCH_STARTED_CONNECTED_V28';\n" +
                 "})(" + quotedPhone + ")";
 
         waWebView.evaluateJavascript(js, value -> {
-            logMini("WA_WEB_SEARCH_SAME_PAGE_" + waWebOpenAttempts + ": " + value);
+            logMini("WA_WEB_SEARCH_V28_" + waWebOpenAttempts + ": " + value);
 
             handler.postDelayed(() -> {
                 waWebView.evaluateJavascript("(function(){return window.UNB_SEARCH_OPEN || '';})()", result -> {
                     String r = String.valueOf(result);
-                    logMini("WA_WEB_SEARCH_RESULT: " + r);
+                    logMini("WA_WEB_SEARCH_RESULT_V28: " + r);
 
-                    if (r.contains("CLICKED_MATCH") || r.contains("CLICKED_FIRST")) {
+                    if (r.contains("CLICKED_MATCH") || r.contains("CLICKED_SINGLE_RESULT") || r.contains("CLICKED_FIRST_RESULT")) {
                         currentWaWebPhone = waWebPhone;
                         prefs.edit().putString("current_wa_web_phone", currentWaWebPhone).apply();
-                        handler.postDelayed(() -> fillAndSendCurrentChat(), 1200);
+                        handler.postDelayed(() -> fillAndSendCurrentChat(), 1800);
                         return;
                     }
 
-                    if (waWebOpenAttempts < 5) {
-                        handler.postDelayed(() -> openChatBySearchThenSend(), 900);
+                    if (waWebOpenAttempts < 6) {
+                        handler.postDelayed(() -> openChatBySearchThenSend(), 1200);
                         return;
                     }
 
                     waWebResultSent = true;
-                    setStatus("لم يتم العثور على المحادثة من البحث داخل WhatsApp Web.");
-                    markWhatsAppWebResult("failed", "whatsapp_web_search_chat_not_found_same_page_v27");
+                    setStatus("لم يفتح البحث المحادثة داخل WhatsApp Web.");
+                    markWhatsAppWebResult("failed", "whatsapp_web_search_chat_not_found_connected_v28");
 
                     if (waWebQueueRunning) {
                         handler.postDelayed(() -> runNextWhatsAppWebJob(), 900);
                     }
                 });
-            }, 2600);
+            }, 3400);
         });
     }
 
@@ -654,7 +682,7 @@ public class MainActivity extends Activity {
         if (waWebResultSent) return;
 
         waWebAttempts++;
-        setStatus("إرسال من نفس صفحة WhatsApp Web رقم " + waWebAttempts + " ...");
+        setStatus("إرسال من صندوق WhatsApp Web رقم " + waWebAttempts + " ...");
 
         String quoted = JSONObject.quote(waWebMessage == null ? "" : waWebMessage);
 
@@ -662,13 +690,17 @@ public class MainActivity extends Activity {
                 "(function(msg){\n" +
                 "  window.UNB_DIRECT_SENT='';\n" +
                 "  function vis(e){ if(!e) return false; var r=e.getBoundingClientRect(); return r.width>0 && r.height>0; }\n" +
+                "  function fire(el,t){ try{ el.dispatchEvent(new Event(t,{bubbles:true})); }catch(e){} }\n" +
+                "  function key(el,k){ try{ el.dispatchEvent(new KeyboardEvent('keydown',{key:k,code:k,bubbles:true,cancelable:true,keyCode:k==='Enter'?13:0,which:k==='Enter'?13:0})); }catch(e){} }\n" +
                 "  function put(el,v){\n" +
                 "    try{\n" +
                 "      el.focus();\n" +
                 "      document.execCommand('selectAll', false, null);\n" +
+                "      document.execCommand('delete', false, null);\n" +
                 "      document.execCommand('insertText', false, v);\n" +
                 "      el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:v}));\n" +
-                "    }catch(e){ try{ el.textContent=v; el.dispatchEvent(new Event('input',{bubbles:true})); }catch(x){} }\n" +
+                "      fire(el,'change'); fire(el,'keyup');\n" +
+                "    }catch(e){ try{ el.textContent=v; fire(el,'input'); fire(el,'change'); }catch(x){} }\n" +
                 "  }\n" +
                 "  function btnFrom(e){ return e.closest('button') || e.closest('[role=\"button\"]') || e; }\n" +
                 "  var boxes=[].slice.call(document.querySelectorAll('footer div[contenteditable=\"true\"], div[contenteditable=\"true\"][role=\"textbox\"], div[contenteditable=\"true\"]')).filter(vis);\n" +
@@ -679,46 +711,47 @@ public class MainActivity extends Activity {
                 "    var selectors=['span[data-icon=\"send\"]','[data-icon=\"send\"]','[data-testid=\"send\"]','[data-icon=\"wds-ic-send-filled\"]','button[aria-label*=\"Send\"]','div[aria-label*=\"Send\"]','button[aria-label*=\"إرسال\"]','div[aria-label*=\"إرسال\"]'];\n" +
                 "    for(var s of selectors){\n" +
                 "      var arr=[].slice.call(document.querySelectorAll(s));\n" +
-                "      for(var el of arr){ var b=btnFrom(el); if(vis(b)){ b.click(); window.UNB_DIRECT_SENT='YES'; return; } }\n" +
+                "      for(var el of arr){ var b=btnFrom(el); if(vis(b)){ b.click(); window.UNB_DIRECT_SENT='YES_BUTTON'; return; } }\n" +
                 "    }\n" +
-                "    window.UNB_DIRECT_SENT='NO_SEND_BUTTON';\n" +
-                "  },450);\n" +
-                "  return 'TEXT_INSERTED_DIRECT';\n" +
+                "    key(box,'Enter');\n" +
+                "    window.UNB_DIRECT_SENT='YES_ENTER';\n" +
+                "  },700);\n" +
+                "  return 'TEXT_INSERTED_CONNECTED_V28';\n" +
                 "})(" + quoted + ")";
 
         waWebView.evaluateJavascript(js, value -> {
-            logMini("WA_WEB_DIRECT_SAME_PAGE_" + waWebAttempts + ": " + value);
+            logMini("WA_WEB_SEND_V28_" + waWebAttempts + ": " + value);
 
             handler.postDelayed(() -> {
                 waWebView.evaluateJavascript("(function(){return window.UNB_DIRECT_SENT || '';})()", result -> {
                     String r = String.valueOf(result);
-                    logMini("WA_WEB_DIRECT_RESULT: " + r);
+                    logMini("WA_WEB_SEND_RESULT_V28: " + r);
 
-                    if (r.contains("YES")) {
+                    if (r.contains("YES_BUTTON") || r.contains("YES_ENTER")) {
                         waWebResultSent = true;
                         setStatus("تم إرسال WhatsApp Web من نفس الصفحة.");
-                        markWhatsAppWebResult("sent", "whatsapp_web_sent_by_search_same_page_v27");
+                        markWhatsAppWebResult("sent", "whatsapp_web_sent_by_connected_search_send_v28");
 
                         if (waWebQueueRunning) {
-                            handler.postDelayed(() -> runNextWhatsAppWebJob(), 700);
+                            handler.postDelayed(() -> runNextWhatsAppWebJob(), 800);
                         }
                         return;
                     }
 
-                    if (waWebAttempts < 5) {
-                        handler.postDelayed(() -> fillAndSendCurrentChat(), 900);
+                    if (waWebAttempts < 6) {
+                        handler.postDelayed(() -> fillAndSendCurrentChat(), 1000);
                         return;
                     }
 
                     waWebResultSent = true;
-                    setStatus("فشل الإرسال من صندوق المحادثة الحالي.");
-                    markWhatsAppWebResult("failed", "whatsapp_web_direct_send_failed_same_page_v27");
+                    setStatus("فشل الإرسال من صندوق WhatsApp Web.");
+                    markWhatsAppWebResult("failed", "whatsapp_web_direct_send_failed_connected_v28");
 
                     if (waWebQueueRunning) {
                         handler.postDelayed(() -> runNextWhatsAppWebJob(), 900);
                     }
                 });
-            }, 950);
+            }, 1400);
         });
     }
 
@@ -764,7 +797,7 @@ public class MainActivity extends Activity {
             if (v.contains("CLICKED_SEND")) {
                 waWebResultSent = true;
                 setStatus("تم إرسال WhatsApp Web.");
-                markWhatsAppWebResult("sent", "whatsapp_web_sent_by_search_same_page_v27");
+                markWhatsAppWebResult("sent", "whatsapp_web_sent_by_connected_search_send_v28");
 
                 if (waWebQueueRunning) {
                     handler.postDelayed(() -> runNextWhatsAppWebJob(), 900);
@@ -777,7 +810,7 @@ public class MainActivity extends Activity {
             } else {
                 waWebResultSent = true;
                 setStatus("فشل العثور على زر إرسال WhatsApp Web.");
-                markWhatsAppWebResult("failed", "whatsapp_web_send_button_not_found_search_same_page_v27");
+                markWhatsAppWebResult("failed", "whatsapp_web_send_button_not_found_connected_search_send_v28");
 
                 if (waWebQueueRunning) {
                     handler.postDelayed(() -> runNextWhatsAppWebJob(), 900);
