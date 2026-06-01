@@ -1,5 +1,7 @@
 package com.unb.connect;
 
+import android.view.WindowManager;
+import android.os.PowerManager;
 import android.Manifest;
 import android.app.Activity;
 import android.os.Bundle;
@@ -51,7 +53,7 @@ public class MainActivity extends Activity {
     boolean autoPullStartedV42 = false;
     boolean autoPullBusyV42 = false;
     long lastCallApkAtV42 = 0L;
-    final long AUTO_PULL_INTERVAL_V42 = 10000L;
+    final long AUTO_PULL_INTERVAL_V42 = 15000L;
     final long CALL_APK_GUARD_MS_V42 = 90000L;
     Runnable autoPullRunnableV42 = new Runnable() {
         @Override public void run() {
@@ -95,6 +97,11 @@ public class MainActivity extends Activity {
     String waWebMessage = "";
     String currentWaWebPhone = "";
 
+    // UNB_V43_AUTOWAKE_FIELDS
+    PowerManager.WakeLock waWebWakeLockV43 = null;
+    boolean appInForegroundV43 = false;
+    boolean waWebReopenedForComposeV43 = false;
+
     final int DARK = Color.rgb(15, 23, 42);
     final int GREEN = Color.rgb(13, 148, 136);
     final int BLUE = Color.rgb(37, 99, 235);
@@ -106,11 +113,54 @@ public class MainActivity extends Activity {
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
             "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
+
+    // UNB_V43_ACTIVITY_FOREGROUND_WAKE_HOOKS
+    @Override
+    protected void onResume() {
+        super.onResume();
+        appInForegroundV43 = true;
+        refreshBrandFromPrefsV42();
+        startAutoPullV42();
+        if (waWebQueueRunning) keepWhatsAppWebScreenOnV43();
+        scheduleAutoPullV42(1200L);
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        appInForegroundV43 = false;
+        if (!waWebQueueRunning) releaseWhatsAppWebScreenV43();
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleAutoWakeIntentV43(intent);
+    }
+
+    void handleAutoWakeIntentV43(Intent intent) {
+        try {
+            if (intent != null && intent.getBooleanExtra("unb_v43_autowake_whatsapp_web", false)) {
+                logMini("V43 AutoWake: فتح التطبيق بسبب طلب WhatsApp Web.");
+                keepWhatsAppWebScreenOnV43();
+                showWhatsAppWeb();
+                ensureWhatsAppWebLoaded();
+                focusWhatsAppWeb();
+                startAutoPullV42();
+                scheduleAutoPullV42(1200L);
+            }
+        } catch (Exception e) {
+            logMini("V43 AutoWake intent error: " + e.getMessage());
+        }
+    }
+
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
         prefs = getSharedPreferences("unb_connect", MODE_PRIVATE);
         ensureDevice();
+        startKeepAliveServiceV43();
 
         if (Build.VERSION.SDK_INT >= 23) {
             requestPermissions(new String[]{
@@ -620,6 +670,7 @@ public class MainActivity extends Activity {
         try {
             if (waWebIndex >= waWebQueue.length()) {
                 waWebQueueRunning = false;
+                releaseWhatsAppWebScreenV43();
                 logMini("انتهى تنفيذ طابور WhatsApp Web.");
                 logMini("اكتمل تنفيذ WhatsApp Web.");
                 return;
@@ -669,17 +720,20 @@ public class MainActivity extends Activity {
     }
 
     void openChatBySearchThenSend() {
+        // UNB_CONNECT_V43_AUTOWAKE_15S_STABLE_WA
         // UNB_WA_WEB_FAST_DIRECT_CUSTOMERS_V41
         if (waWebResultSent) return;
 
         try {
             waWebOpenAttempts++;
             waWebChatReadyAttempts = 0;
+            if (waWebOpenAttempts <= 1) waWebReopenedForComposeV43 = false;
+            keepWhatsAppWebScreenOnV43();
 
             String phoneClean = waWebPhone == null ? "" : waWebPhone.replaceAll("[^0-9]", "");
             if (phoneClean.length() == 0) {
                 waWebResultSent = true;
-                markWhatsAppWebResult("failed", "whatsapp_web_fast_direct_empty_phone_v41");
+                markWhatsAppWebResult("failed", "whatsapp_web_autowake_empty_phone_v43");
                 return;
             }
 
@@ -701,7 +755,7 @@ public class MainActivity extends Activity {
 
             handler.postDelayed(() -> {
                 try { applyWhatsAppWebDesktopViewportV36(); } catch (Exception ignored) {}
-            }, 1600);
+            }, 2500);
 
             handler.postDelayed(() -> {
                 try {
@@ -711,11 +765,11 @@ public class MainActivity extends Activity {
                     logMini("V41 fast direct verify error: " + e.getMessage());
                     verifyWhatsAppWebChatReadyThenSend();
                 }
-            }, 3800);
+            }, 7000);
 
         } catch (Exception e) {
             waWebResultSent = true;
-            markWhatsAppWebResult("failed", "whatsapp_web_fast_direct_exception_v41_" + e.getClass().getSimpleName());
+            markWhatsAppWebResult("failed", "whatsapp_web_autowake_exception_v43_" + e.getClass().getSimpleName());
         }
     }
 
@@ -766,14 +820,21 @@ void verifyWhatsAppWebChatReadyThenSend() {
             return;
         }
 
-        if (waWebChatReadyAttempts < 10) {
-            handler.postDelayed(() -> verifyWhatsAppWebChatReadyThenSend(), 900);
+        if (waWebChatReadyAttempts == 10 && !waWebReopenedForComposeV43) {
+            waWebReopenedForComposeV43 = true;
+            logMini("V43: صندوق WhatsApp Web غير جاهز، إعادة فتح الرابط مرة واحدة.");
+            handler.postDelayed(() -> openChatBySearchThenSend(), 1200);
+            return;
+        }
+
+        if (waWebChatReadyAttempts < 24) {
+            handler.postDelayed(() -> verifyWhatsAppWebChatReadyThenSend(), 1500);
             return;
         }
 
         waWebResultSent = true;
-        setStatus("فشل تأكيد فتح محادثة WhatsApp Web.");
-        markWhatsAppWebResult("failed", "whatsapp_web_chat_compose_not_ready_fast_direct_customers_v41");
+        setStatus("فشل تأكيد فتح محادثة WhatsApp Web بعد انتظار V43.");
+        markWhatsAppWebResult("failed", "whatsapp_web_chat_compose_not_ready_autowake_stable_v43");
         if (waWebQueueRunning) {
             handler.postDelayed(() -> runNextWhatsAppWebJob(), 900);
         }
@@ -833,7 +894,7 @@ void verifyWhatsAppWebChatReadyThenSend() {
                     if (r.contains("YES_BUTTON")) {
                         waWebResultSent = true;
                         setStatus("تم إرسال WhatsApp Web من نفس الصفحة.");
-                        markWhatsAppWebResult("sent", "whatsapp_web_sent_fast_direct_customers_v41");
+                        markWhatsAppWebResult("sent", "whatsapp_web_sent_autowake_stable_v43");
 
                         if (waWebQueueRunning) {
                             handler.postDelayed(() -> runNextWhatsAppWebJob(), 800);
@@ -848,7 +909,7 @@ void verifyWhatsAppWebChatReadyThenSend() {
 
                     waWebResultSent = true;
                     setStatus("فشل الإرسال من صندوق WhatsApp Web.");
-                    markWhatsAppWebResult("failed", "whatsapp_web_direct_send_failed_fast_direct_customers_v41");
+                    markWhatsAppWebResult("failed", "whatsapp_web_direct_send_failed_autowake_stable_v43");
 
                     if (waWebQueueRunning) {
                         handler.postDelayed(() -> runNextWhatsAppWebJob(), 900);
@@ -900,7 +961,7 @@ void verifyWhatsAppWebChatReadyThenSend() {
             if (v.contains("CLICKED_SEND")) {
                 waWebResultSent = true;
                 setStatus("تم إرسال WhatsApp Web.");
-                markWhatsAppWebResult("sent", "whatsapp_web_sent_fast_direct_customers_v41");
+                markWhatsAppWebResult("sent", "whatsapp_web_sent_autowake_stable_v43");
 
                 if (waWebQueueRunning) {
                     handler.postDelayed(() -> runNextWhatsAppWebJob(), 900);
@@ -913,7 +974,7 @@ void verifyWhatsAppWebChatReadyThenSend() {
             } else {
                 waWebResultSent = true;
                 setStatus("فشل العثور على زر إرسال WhatsApp Web.");
-                markWhatsAppWebResult("failed", "whatsapp_web_send_button_not_found_fast_direct_customers_v41");
+                markWhatsAppWebResult("failed", "whatsapp_web_send_button_not_found_autowake_stable_v43");
 
                 if (waWebQueueRunning) {
                     handler.postDelayed(() -> runNextWhatsAppWebJob(), 900);
@@ -972,6 +1033,65 @@ void verifyWhatsAppWebChatReadyThenSend() {
         if (linkSummaryView != null) {
             linkSummaryView.setText("اضغط أي طريقة لنسخ URL + TOKEN + METHOD");
         }
+    }
+
+
+
+    // UNB_V43_AUTOWAKE_KEEP_SCREEN_METHODS
+    void startKeepAliveServiceV43() {
+        try {
+            Intent i = new Intent(this, UnbKeepAliveService.class);
+            if (Build.VERSION.SDK_INT >= 26) {
+                startForegroundService(i);
+            } else {
+                startService(i);
+            }
+        } catch (Exception e) {
+            logMini("تعذر تشغيل خدمة V43: " + e.getMessage());
+        }
+    }
+
+    void keepWhatsAppWebScreenOnV43() {
+        try {
+            getWindow().addFlags(
+                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON |
+                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON |
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
+                WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
+            );
+
+            PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            if (pm != null && (waWebWakeLockV43 == null || !waWebWakeLockV43.isHeld())) {
+                try {
+                    waWebWakeLockV43 = pm.newWakeLock(
+                        PowerManager.SCREEN_BRIGHT_WAKE_LOCK |
+                        PowerManager.ACQUIRE_CAUSES_WAKEUP |
+                        PowerManager.ON_AFTER_RELEASE,
+                        "UNB_CONNECT:WA_WEB_V43"
+                    );
+                    waWebWakeLockV43.acquire(10 * 60 * 1000L);
+                } catch (Exception e) {
+                    try {
+                        waWebWakeLockV43 = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "UNB_CONNECT:WA_WEB_V43_PARTIAL");
+                        waWebWakeLockV43.acquire(10 * 60 * 1000L);
+                    } catch (Exception ignored) {}
+                }
+            }
+        } catch (Exception e) {
+            logMini("V43 keep screen error: " + e.getMessage());
+        }
+    }
+
+    void releaseWhatsAppWebScreenV43() {
+        try {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        } catch (Exception ignored) {}
+
+        try {
+            if (waWebWakeLockV43 != null && waWebWakeLockV43.isHeld()) {
+                waWebWakeLockV43.release();
+            }
+        } catch (Exception ignored) {}
     }
 
 
@@ -1139,6 +1259,7 @@ void verifyWhatsAppWebChatReadyThenSend() {
                     waWebIndex = 0;
                     waWebQueueRunning = true;
                     runOnUiThread(() -> {
+                        keepWhatsAppWebScreenOnV43();
                         focusWhatsAppWeb();
                         runNextWhatsAppWebJob();
                     });
@@ -1249,6 +1370,7 @@ void verifyWhatsAppWebChatReadyThenSend() {
                     waWebIndex = 0;
                     waWebQueueRunning = true;
                     runOnUiThread(() -> {
+                        keepWhatsAppWebScreenOnV43();
                         focusWhatsAppWeb();
                         runNextWhatsAppWebJob();
                     });
